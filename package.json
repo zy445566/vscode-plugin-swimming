@@ -29,6 +29,17 @@
           "group": "navigation"
         }
       ]
+    },
+    "configuration": {
+      "type": "object",
+      "title": "Swimming Config",
+      "properties": {
+        "vscodePluginSwimming.reWriteSpeed": {
+          "type": "number",
+          "default": 200,
+          "description": "重写速度(ms)"
+        }
+      }
     }
   },
   "scripts": {
@@ -50,5 +61,8 @@
   "bugs": {
     "url": "https://github.com/zy445566/vscode-plugin-swimming/issues"
   },
-  "homepage": "https://github.com/zy445566/vscode-plugin-swimming#readme"
+  "homepage": "https://github.com/zy445566/vscode-plugin-swimming#readme",
+  "devDependencies": {
+    "@types/vscode": "^1.45.1"
+  }
 }

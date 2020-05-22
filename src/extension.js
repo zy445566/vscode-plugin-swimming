@@ -11,13 +11,26 @@ exports.activate = function(context) {
         const beforeText = textEditor.document.getText(selectionRange);
         let i=0;
         edit.delete(selectionRange);
+        let writePosition = new vscode.Position(
+            textEditor.selection.start.line,
+            textEditor.selection.start.character
+        );
+        const speed = vscode.workspace.getConfiguration().get('vscodePluginSwimming.reWriteSpeed')
         const inputInterval = setInterval(()=>{
-            if(i>=beforeText.length-1){clearInterval(inputInterval)}
+            if(i>=beforeText.length-1 || textEditor.document.isClosed){
+                return clearInterval(inputInterval)
+            }
+            if(beforeText[i]==='\r' && beforeText[i+1]==='\n') {i++;return;}
             textEditor.edit(editBuilder => {
-                editBuilder.replace(textEditor.selection.end, beforeText[i]);
+                editBuilder.insert(writePosition, beforeText[i]);
+                if(beforeText[i]==='\n') {
+                    writePosition = new vscode.Position(writePosition.line+1,0)
+                } else {
+                    writePosition = new vscode.Position(writePosition.line,writePosition.character+1)
+                }
                 i++;
 			});
-        },200);
+        },speed);
     }));
 };
 
