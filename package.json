@@ -1,0 +1,54 @@
+{
+  "name": "vscode-plugin-swimming",
+  "displayName": "swimming",
+  "description": "VSCode模拟写代码，划水，摸鱼神器。代码写的快，提早完工被压榨怎么办？你需要一个模拟写代码工具，让代码自己重写一遍。",
+  "version": "1.0.0",
+  "publisher": "zy445566",
+  "engines": {
+    "vscode": "^1.34.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:extension.rewriteCode"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "extension.rewriteCode",
+        "title": "Code Rewriting"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "editorFocus",
+          "command": "extension.rewriteCode",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zy445566/vscode-plugin-swimming.git"
+  },
+  "keywords": [
+    "swimming",
+    "vscode",
+    "摸鱼",
+    "划水",
+    "模拟代码"
+  ],
+  "author": "zy445566",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/zy445566/vscode-plugin-swimming/issues"
+  },
+  "homepage": "https://github.com/zy445566/vscode-plugin-swimming#readme"
+}
