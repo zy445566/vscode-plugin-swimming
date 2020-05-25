@@ -8,3 +8,6 @@ VSCode模拟写代码，划水，摸鱼神器。代码写的快，提早完工�
 
 # 重要说明
 请先提交代码，否则代码丢失概不负责！
+
+# 仓库地址
+https://github.com/zy445566/vscode-plugin-swimming
