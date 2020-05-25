@@ -15,7 +15,6 @@ export function activate(context: vscode.ExtensionContext) {
             textEditor.selection.start.line,
             textEditor.selection.start.character
         );
-        vscode.EventEmitter
         const speed = vscode.workspace.getConfiguration().get<number>('vscodePluginSwimming.reWriteSpeed')
         const inputInterval = setInterval(()=>{
             if(i>=beforeText.length || textEditor.document.isClosed){
