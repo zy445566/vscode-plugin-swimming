@@ -1,8 +1,8 @@
-const vscode = require('vscode');
+import * as vscode from 'vscode';
 
-
-exports.activate = function(context) {
-    context.subscriptions.push(vscode.commands.registerTextEditorCommand('extension.rewriteCode', function (textEditor,edit,args) {
+export function activate(context: vscode.ExtensionContext) {
+    context.subscriptions.push(vscode.commands.registerTextEditorCommand('extension.rewriteCode', function (
+        textEditor:vscode.TextEditor,edit:vscode.TextEditorEdit,args) {
         let selectionRange = new vscode.Range(textEditor.selection.start,textEditor.selection.end);
         if(selectionRange.isEmpty){
             const end = new vscode.Position(textEditor.document.lineCount + 1, 0);
@@ -15,9 +15,10 @@ exports.activate = function(context) {
             textEditor.selection.start.line,
             textEditor.selection.start.character
         );
-        const speed = vscode.workspace.getConfiguration().get('vscodePluginSwimming.reWriteSpeed')
+        vscode.EventEmitter
+        const speed = vscode.workspace.getConfiguration().get<number>('vscodePluginSwimming.reWriteSpeed')
         const inputInterval = setInterval(()=>{
-            if(i>=beforeText.length-1 || textEditor.document.isClosed){
+            if(i>=beforeText.length || textEditor.document.isClosed){
                 return clearInterval(inputInterval)
             }
             if(beforeText[i]==='\r' && beforeText[i+1]==='\n') {i++;return;}
@@ -30,10 +31,8 @@ exports.activate = function(context) {
                 }
                 i++;
 			});
-        },speed);
+        },speed?speed:0);
     }));
-};
+}
 
-exports.deactivate = function() {
-    console.log('swimming deactivate')
-};
+export function deactivate() {}
