@@ -1,8 +1,14 @@
 import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext) {
-    context.subscriptions.push(vscode.commands.registerTextEditorCommand('extension.rewriteCode', function (
-        textEditor:vscode.TextEditor,edit:vscode.TextEditorEdit,args) {
+    context.subscriptions.push(vscode.commands.registerTextEditorCommand('extension.swimming.closeWriteCode', function (
+        textEditor:vscode.TextEditor,edit:vscode.TextEditorEdit,args
+    ){
+        vscode.commands.executeCommand('workbench.action.reloadWindow');
+    }));
+    context.subscriptions.push(vscode.commands.registerTextEditorCommand('extension.swimming.rewriteCode', function (
+        textEditor:vscode.TextEditor,edit:vscode.TextEditorEdit,args
+    ) {
         let selectionRange = new vscode.Range(textEditor.selection.start,textEditor.selection.end);
         if(selectionRange.isEmpty){
             const end = new vscode.Position(textEditor.document.lineCount + 1, 0);
