@@ -30,6 +30,7 @@ jobs:
       - uses: actions/setup-node@v1
         with:
           node-version: 12
+      - run: npm ci
       - run: npx vsce package
       - run: npx vsce publish -p $VSCE_TOKEN
         env:
