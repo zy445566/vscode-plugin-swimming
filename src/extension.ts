@@ -21,6 +21,7 @@ function getReWriteSpeed() {
 
     return typeof reWriteSpeed === 'number' ? reWriteSpeed : 0;
 }
+let isWriteCodepause = false;
 
 function rewriteCode(
     textEditor: TextEditor,
@@ -42,6 +43,7 @@ function rewriteCode(
     edit.delete(selectionRange);
 
     const inputInterval: NodeJS.Timeout = setInterval(() => {
+        if(isWriteCodepause) {return;}
         if (i >= beforeText.length || textEditor.document.isClosed) {
             return clearInterval(inputInterval);
         }
@@ -64,6 +66,14 @@ function closeWriteCode(
     commands.executeCommand('workbench.action.reloadWindow');
 }
 
+function pauseWriteCode(
+    _textEditor: TextEditor,
+    _edit: TextEditorEdit,
+    ..._args: any[]
+) {
+    isWriteCodepause = !isWriteCodepause;
+}
+
 export function activate(context: ExtensionContext) {
     const textEditorCommandMap = [
         {
@@ -73,6 +83,10 @@ export function activate(context: ExtensionContext) {
         {
             command: 'extension.swimming.closeWriteCode',
             callback: closeWriteCode,
+        },
+        {
+            command: 'extension.swimming.pauseWriteCode',
+            callback: pauseWriteCode,
         },
     ];
 

@@ -2,7 +2,7 @@
   "name": "vscode-plugin-swimming",
   "displayName": "swimming",
   "description": "VSCode模拟写代码，划水，摸鱼神器。代码写的快，提早完工被压榨怎么办？你需要一个模拟写代码工具，让代码自己重写一遍。",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "publisher": "swimming",
   "icon": "128.png",
   "engines": {
@@ -13,7 +13,8 @@
   ],
   "activationEvents": [
     "onCommand:extension.swimming.rewriteCode",
-    "onCommand:extension.swimming.closeWriteCode"
+    "onCommand:extension.swimming.closeWriteCode",
+    "onCommand:extension.swimming.pauseWriteCode"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -25,6 +26,10 @@
       {
         "command": "extension.swimming.closeWriteCode",
         "title": "Close Write Code"
+      },
+      {
+        "command": "extension.swimming.pauseWriteCode",
+        "title": "Pause Write Code"
       }
     ],
     "menus": {
@@ -41,6 +46,11 @@
         "command": "extension.swimming.closeWriteCode",
         "key": "ctrl+alt+x",
         "mac": "alt+cmd+x"
+      },
+      {
+        "command": "extension.swimming.pauseWriteCode",
+        "key": "p",
+        "mac": "p"
       }
     ],
     "configuration": {
