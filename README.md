@@ -13,7 +13,7 @@ VSCode模拟写代码，划水，摸鱼神器。代码写的快，提早完工�
 
 如果想要暂停代码重写，可以直接使用以下按键暂停：
 * win默认:ctrl+alt+shift+p
-* mac默认:alt+cmd+shif+p
+* mac默认:alt+cmd+shift+p
 
 如果想要放弃代码重写，可以直接使用以下按键停止：
 * win默认:ctrl+alt+x
