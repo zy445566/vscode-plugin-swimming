@@ -6,13 +6,8 @@ import {
     commands,
     Position,
     workspace,
+    TextEditorRevealType,
 } from 'vscode';
-
-function createPosition(textEditor: TextEditor) {
-    const { line, character } = textEditor.selection.start;
-
-    return new Position(line, character);
-}
 
 function getReWriteSpeed() {
     const reWriteSpeed = workspace
@@ -41,19 +36,33 @@ function rewriteCode(
     const beforeText = textEditor.document.getText(selectionRange);
 
     edit.delete(selectionRange);
+    let { line, character } = textEditor.selection.start;
 
     const inputInterval: NodeJS.Timeout = setInterval(() => {
         if(isWriteCodepause) {return;}
         if (i >= beforeText.length || textEditor.document.isClosed) {
             return clearInterval(inputInterval);
         }
-
-        if (beforeText.startsWith('\r\n', i)) {
-            return i++;
-        }
-
+        const nowPosition = new Position(line, character);
         textEditor.edit((editBuilder) => {
-            editBuilder.insert(createPosition(textEditor), beforeText[i++]);
+            textEditor.revealRange(
+                new Range(nowPosition, nowPosition),
+                TextEditorRevealType.InCenter
+            )
+            if (beforeText.startsWith('\r\n', i)) {
+                character = 0;
+                line++
+                editBuilder.insert(nowPosition, '\r\n');
+                return i+=2;
+            }
+            if (beforeText.startsWith('\n', i)) {
+                character = 0;
+                line++
+                editBuilder.insert(nowPosition, '\n');
+                return i+=1;
+            }
+            editBuilder.insert(nowPosition, beforeText[i++]);
+            character++;
         });
     }, getReWriteSpeed());
 }
