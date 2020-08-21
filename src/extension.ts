@@ -7,6 +7,7 @@ import {
     Position,
     workspace,
     TextEditorRevealType,
+    window,
 } from 'vscode';
 
 function getReWriteSpeed() {
@@ -16,15 +17,24 @@ function getReWriteSpeed() {
 
     return typeof reWriteSpeed === 'number' ? reWriteSpeed : 0;
 }
-let isWriteCodepause = false;
-
+const isWriteCodePauseMap:Map<string,boolean> = new Map();
+const isWritingCodeMap:Map<string,boolean> = new Map();
+const showPauseinfo = function(textEditor: TextEditor) {
+    if(isWriteCodePauseMap.get(textEditor.document.fileName)) {
+        window.showInformationMessage('pauseWriteCode Now')
+    }
+}
 function rewriteCode(
     textEditor: TextEditor,
     edit: TextEditorEdit,
     _args: any[]
 ) {
+    if(isWritingCodeMap.get(textEditor.document.fileName)) {
+        return window.showInformationMessage('rewriteCode already in progress')
+    }
+    isWritingCodeMap.set(textEditor.document.fileName,true)
+    isWriteCodePauseMap.set(textEditor.document.fileName,false)
     const { start, end } = textEditor.selection;
-
     let i = 0;
     let selectionRange = new Range(start, end);
 
@@ -37,34 +47,54 @@ function rewriteCode(
 
     edit.delete(selectionRange);
     let { line, character } = textEditor.selection.start;
-
-    const inputInterval: NodeJS.Timeout = setInterval(() => {
-        if(isWriteCodepause) {return;}
-        if (i >= beforeText.length || textEditor.document.isClosed) {
-            return clearInterval(inputInterval);
-        }
-        const nowPosition = new Position(line, character);
-        textEditor.edit((editBuilder) => {
-            textEditor.revealRange(
-                new Range(nowPosition, nowPosition),
-                TextEditorRevealType.InCenter
-            )
-            if (beforeText.startsWith('\r\n', i)) {
-                character = 0;
-                line++
-                editBuilder.insert(nowPosition, '\r\n');
-                return i+=2;
+    const recycleWrite = function(inputTimeout: NodeJS.Timeout) {
+        isWritingCodeMap.set(textEditor.document.fileName,false)
+        clearTimeout(inputTimeout);
+    }
+    const runWrite = function() {
+        const inputTimeout: NodeJS.Timeout = setTimeout(() => {
+            if(isWriteCodePauseMap.get(textEditor.document.fileName)) {
+                return textEditor.edit((_editBuilder) => {})
+                .then((_value:boolean)=>{
+                    return runWrite();
+                },(reason)=>{
+                    recycleWrite(inputTimeout)
+                    throw new Error(reason);
+                })
             }
-            if (beforeText.startsWith('\n', i)) {
-                character = 0;
-                line++
-                editBuilder.insert(nowPosition, '\n');
-                return i+=1;
+            if (i >= beforeText.length || textEditor.document.isClosed) {
+                return recycleWrite(inputTimeout)
             }
-            editBuilder.insert(nowPosition, beforeText[i++]);
-            character++;
-        });
-    }, getReWriteSpeed());
+            const nowPosition = new Position(line, character);
+            textEditor.edit((editBuilder) => {
+                textEditor.revealRange(
+                    new Range(nowPosition, nowPosition),
+                    TextEditorRevealType.InCenter
+                )
+                if (beforeText.startsWith('\r\n', i)) {
+                    character = 0;
+                    line++
+                    editBuilder.insert(nowPosition, '\r\n');
+                    return i+=2;
+                }
+                if (beforeText.startsWith('\n', i)) {
+                    character = 0;
+                    line++
+                    editBuilder.insert(nowPosition, '\n');
+                    return i+=1;
+                }
+                editBuilder.insert(nowPosition, beforeText[i++]);
+                character++;
+            }).then((_value:boolean)=>{
+                return runWrite();
+            },(reason)=>{
+                recycleWrite(inputTimeout)
+                throw new Error(reason);
+            })
+        }, getReWriteSpeed());
+    }
+    runWrite();
+    
 }
 
 function closeWriteCode(
@@ -72,15 +102,18 @@ function closeWriteCode(
     _edit: TextEditorEdit,
     ..._args: any[]
 ) {
+    isWriteCodePauseMap.clear();
+    isWritingCodeMap.clear();
     commands.executeCommand('workbench.action.reloadWindow');
 }
 
 function pauseWriteCode(
-    _textEditor: TextEditor,
+    textEditor: TextEditor,
     _edit: TextEditorEdit,
     ..._args: any[]
 ) {
-    isWriteCodepause = !isWriteCodepause;
+    isWriteCodePauseMap.set(textEditor.document.fileName,!isWriteCodePauseMap.get(textEditor.document.fileName))
+    showPauseinfo(textEditor);
 }
 
 export function activate(context: ExtensionContext) {
