@@ -112,6 +112,9 @@ function pauseWriteCode(
     _edit: TextEditorEdit,
     ..._args: any[]
 ) {
+    if(!isWritingCodeMap.get(textEditor.document.fileName)) {
+        return window.showInformationMessage('rewriteCode not run,cannot pause.')
+    }
     isWriteCodePauseMap.set(textEditor.document.fileName,!isWriteCodePauseMap.get(textEditor.document.fileName))
     showPauseinfo(textEditor);
 }
