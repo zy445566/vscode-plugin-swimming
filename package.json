@@ -2,7 +2,7 @@
   "name": "vscode-plugin-swimming",
   "displayName": "swimming",
   "description": "VSCode模拟写代码，划水，摸鱼神器。代码写的快，提早完工被压榨怎么办？你需要一个模拟写代码工具，让代码自己重写一遍。",
-  "version": "1.0.19",
+  "version": "1.1.1",
   "publisher": "swimming",
   "icon": "128.png",
   "engines": {
@@ -14,7 +14,8 @@
   "activationEvents": [
     "onCommand:extension.swimming.rewriteCode",
     "onCommand:extension.swimming.closeWriteCode",
-    "onCommand:extension.swimming.pauseWriteCode"
+    "onCommand:extension.swimming.pauseWriteCode",
+    "onCommand:extension.swimming.switchWriteMode"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -30,6 +31,10 @@
       {
         "command": "extension.swimming.pauseWriteCode",
         "title": "Pause/Continue Write Code"
+      },
+      {
+        "command": "extension.swimming.switchWriteMode",
+        "title": "Switch Write Mode"
       }
     ],
     "menus": {
@@ -43,6 +48,11 @@
           "when": "editorFocus",
           "command": "extension.swimming.pauseWriteCode",
           "group": "navigation"
+        },
+        {
+          "when": "editorFocus",
+          "command": "extension.swimming.switchWriteMode",
+          "title": "Switch Write Mode"
         }
       ]
     },
@@ -66,6 +76,11 @@
           "type": "number",
           "default": 200,
           "description": "重写速度(ms)"
+        },
+        "vscodePluginSwimming.rewriteMode": {
+          "type": "string",
+          "default": "once",
+          "description": "重写模式(once/cycle)"
         }
       }
     }
