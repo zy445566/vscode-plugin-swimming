@@ -28,7 +28,6 @@ function getRewriteMode():RewriteMode {
     const nowRewriteMode = workspace
         .getConfiguration()
         .get<RewriteMode>('vscodePluginSwimming.rewriteMode');
-        console.log(666666, nowRewriteMode)
     return nowRewriteMode || RewriteMode.Once;
 }
 
