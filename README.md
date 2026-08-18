@@ -33,7 +33,7 @@ code --install-extension ./swimming-local.vsix --force
 
 选中代码后，右击菜单中选中划水选择对应划水模式即可，也可以右键暂停或继续。如下图：
 
-![使用图片](https://raw.githubusercontent.com/zy445566/vscode-plugin-swimming/master/cr.png)
+![使用图片](https://raw.githubusercontent.com/zy445566/vscode-plugin-swimming/refs/heads/master/code-example.png)
 
 新增 `Shadow Rewriting` 模式：
 * 先选中目标代码，再右键选择 `Shadow Rewriting`
