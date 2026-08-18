@@ -1,0 +1,22 @@
+{
+  "Open the working file beside the typing editor before selecting it.": "Open the working file beside the typing editor before selecting it.",
+  "Editor group {0}": "Editor group {0}",
+  "{0} (Editor group {1})": "{0} (Editor group {1})",
+  "unknown": "unknown",
+  "Select the editor to scroll while you type.": "Select the editor to scroll while you type.",
+  "Look While Typing target selected.": "Look While Typing target selected.",
+  "Code rewriting is paused.": "Code rewriting is paused.",
+  "Shadow Rewriting detected extra characters. Press Backspace to clean them before continuing.": "Shadow Rewriting detected extra characters. Press Backspace to clean them before continuing.",
+  "Shadow Rewriting is out of sync with the target text. Stop and restart this session if needed.": "Shadow Rewriting is out of sync with the target text. Stop and restart this session if needed.",
+  "Code rewriting is already in progress.": "Code rewriting is already in progress.",
+  "No code available for Shadow Rewriting.": "No code available for Shadow Rewriting.",
+  "Shadow Rewriting started. Press Esc to exit.": "Shadow Rewriting started. Press Esc to exit.",
+  "Shadow Rewriting stopped.": "Shadow Rewriting stopped.",
+  "Code rewriting is not active, so it cannot be paused.": "Code rewriting is not active, so it cannot be paused.",
+  "Switched to {0} mode.": "Switched to {0} mode.",
+  "No closed Look While Typing target to reopen.": "No closed Look While Typing target to reopen.",
+  "The closed Look While Typing target could not be reopened.": "The closed Look While Typing target could not be reopened.",
+  "Select a Look While Typing target before naming it.": "Select a Look While Typing target before naming it.",
+  "Enter a custom label for the working editor. Leave empty to restore its file name.": "Enter a custom label for the working editor. Leave empty to restore its file name.",
+  "Custom working editor labels are available only for files in the workspace.": "Custom working editor labels are available only for files in the workspace."
+}

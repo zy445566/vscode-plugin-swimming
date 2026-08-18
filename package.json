@@ -1,58 +1,168 @@
 {
   "name": "vscode-plugin-swimming",
-  "displayName": "swimming",
-  "description": "VSCode模拟写代码，划水，摸鱼神器。代码写的快，提早完工被压榨怎么办？你需要一个模拟写代码工具，让代码自己重写一遍。",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
   "version": "1.1.2",
   "publisher": "swimming",
   "icon": "128.png",
   "engines": {
-    "vscode": "^1.45.1"
+    "node": ">=20.0.0",
+    "vscode": "^1.100.0"
   },
+  "packageManager": "pnpm@10.32.1",
   "categories": [
     "Other"
   ],
   "activationEvents": [
     "onCommand:extension.swimming.rewriteCode",
+    "onCommand:extension.swimming.shadowRewriteCode",
     "onCommand:extension.swimming.closeWriteCode",
     "onCommand:extension.swimming.pauseWriteCode",
-    "onCommand:extension.swimming.switchWriteMode"
+    "onCommand:extension.swimming.switchWriteMode",
+    "onCommand:extension.swimming.exitShadowRewrite",
+    "onCommand:extension.swimming.selectLookWhileTypingTarget",
+    "onCommand:extension.swimming.clearLookWhileTypingTarget",
+    "onCommand:extension.swimming.scrollLookWhileTypingUp",
+    "onCommand:extension.swimming.scrollLookWhileTypingDown",
+    "onCommand:extension.swimming.closeLookWhileTypingTarget",
+    "onCommand:extension.swimming.reopenLookWhileTypingTarget",
+    "onCommand:extension.swimming.renameLookWhileTypingTarget"
   ],
   "main": "./out/extension.js",
+  "l10n": "./l10n",
   "contributes": {
     "commands": [
       {
         "command": "extension.swimming.rewriteCode",
-        "title": "Code Rewriting"
+        "title": "%command.rewriteCode%"
       },
       {
         "command": "extension.swimming.closeWriteCode",
-        "title": "Close Write Code"
+        "title": "%command.closeWriteCode%"
+      },
+      {
+        "command": "extension.swimming.shadowRewriteCode",
+        "title": "%command.shadowRewriteCode%"
       },
       {
         "command": "extension.swimming.pauseWriteCode",
-        "title": "Pause/Continue Write Code"
+        "title": "%command.pauseWriteCode%"
       },
       {
         "command": "extension.swimming.switchWriteMode",
-        "title": "Switch Write Mode"
+        "title": "%command.switchWriteMode%"
+      },
+      {
+        "command": "extension.swimming.exitShadowRewrite",
+        "title": "%command.exitShadowRewrite%"
+      },
+      {
+        "command": "extension.swimming.selectLookWhileTypingTarget",
+        "title": "%command.selectLookWhileTypingTarget%"
+      },
+      {
+        "command": "extension.swimming.clearLookWhileTypingTarget",
+        "title": "%command.clearLookWhileTypingTarget%"
+      },
+      {
+        "command": "extension.swimming.scrollLookWhileTypingUp",
+        "title": "%command.scrollLookWhileTypingUp%"
+      },
+      {
+        "command": "extension.swimming.scrollLookWhileTypingDown",
+        "title": "%command.scrollLookWhileTypingDown%"
+      },
+      {
+        "command": "extension.swimming.closeLookWhileTypingTarget",
+        "title": "%command.closeLookWhileTypingTarget%"
+      },
+      {
+        "command": "extension.swimming.reopenLookWhileTypingTarget",
+        "title": "%command.reopenLookWhileTypingTarget%"
+      },
+      {
+        "command": "extension.swimming.renameLookWhileTypingTarget",
+        "title": "%command.renameLookWhileTypingTarget%"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "swimming.menu",
+        "label": "%submenu.swimming%"
       }
     ],
     "menus": {
       "editor/context": [
         {
-          "when": "editorFocus",
+          "submenu": "swimming.menu",
+          "group": "navigation"
+        }
+      ],
+      "swimming.menu": [
+        {
           "command": "extension.swimming.rewriteCode",
-          "group": "navigation"
+          "when": "editorFocus",
+          "group": "1_rewrite"
         },
         {
+          "command": "extension.swimming.shadowRewriteCode",
           "when": "editorFocus",
+          "group": "2_shadow"
+        },
+        {
           "command": "extension.swimming.pauseWriteCode",
-          "group": "navigation"
+          "when": "editorFocus",
+          "group": "3_rewriteControls"
         },
         {
-          "when": "editorFocus",
           "command": "extension.swimming.switchWriteMode",
-          "group": "navigation"
+          "when": "editorFocus",
+          "group": "3_rewriteControls"
+        },
+        {
+          "command": "extension.swimming.exitShadowRewrite",
+          "when": "editorFocus && vscodePluginSwimming.shadowActive",
+          "group": "3_rewriteControls"
+        },
+        {
+          "command": "extension.swimming.closeWriteCode",
+          "when": "editorFocus",
+          "group": "3_rewriteControls"
+        },
+        {
+          "command": "extension.swimming.selectLookWhileTypingTarget",
+          "when": "editorFocus",
+          "group": "4_lookWhileTyping"
+        },
+        {
+          "command": "extension.swimming.clearLookWhileTypingTarget",
+          "when": "editorFocus && vscodePluginSwimming.lookWhileTypingTargetVisible",
+          "group": "4_lookWhileTyping"
+        },
+        {
+          "command": "extension.swimming.scrollLookWhileTypingUp",
+          "when": "editorFocus && vscodePluginSwimming.lookWhileTypingTargetVisible",
+          "group": "4_lookWhileTyping"
+        },
+        {
+          "command": "extension.swimming.scrollLookWhileTypingDown",
+          "when": "editorFocus && vscodePluginSwimming.lookWhileTypingTargetVisible",
+          "group": "4_lookWhileTyping"
+        },
+        {
+          "command": "extension.swimming.closeLookWhileTypingTarget",
+          "when": "editorFocus && vscodePluginSwimming.lookWhileTypingTargetVisible",
+          "group": "4_lookWhileTyping"
+        },
+        {
+          "command": "extension.swimming.renameLookWhileTypingTarget",
+          "when": "editorFocus && vscodePluginSwimming.lookWhileTypingTargetVisible",
+          "group": "4_lookWhileTyping"
+        },
+        {
+          "command": "extension.swimming.reopenLookWhileTypingTarget",
+          "when": "editorFocus && vscodePluginSwimming.lookWhileTypingClosedTargetAvailable",
+          "group": "4_lookWhileTyping"
         }
       ]
     },
@@ -66,30 +176,107 @@
         "command": "extension.swimming.pauseWriteCode",
         "key": "ctrl+alt+shift+p",
         "mac": "alt+cmd+shift+p"
+      },
+      {
+        "command": "extension.swimming.exitShadowRewrite",
+        "key": "escape",
+        "when": "editorTextFocus && vscodePluginSwimming.shadowActive"
+      },
+      {
+        "command": "extension.swimming.shadowDeleteLeft",
+        "key": "backspace",
+        "when": "editorTextFocus && vscodePluginSwimming.shadowActive"
+      },
+      {
+        "command": "extension.swimming.shadowEnter",
+        "key": "enter",
+        "when": "editorTextFocus && vscodePluginSwimming.shadowActive"
+      },
+      {
+        "command": "extension.swimming.shadowTab",
+        "key": "tab",
+        "when": "editorTextFocus && vscodePluginSwimming.shadowActive"
       }
     ],
     "configuration": {
       "type": "object",
-      "title": "Swimming Config",
+      "title": "%configuration.title%",
       "properties": {
         "vscodePluginSwimming.reWriteSpeed": {
           "type": "number",
           "default": 200,
-          "description": "重写速度(ms)"
+          "description": "%configuration.rewriteSpeed%"
         },
         "vscodePluginSwimming.rewriteMode": {
           "type": "string",
           "default": "once",
-          "description": "重写模式(once/cycle)"
+          "description": "%configuration.rewriteMode%"
+        },
+        "vscodePluginSwimming.shadowRequireShiftForSymbols": {
+          "type": "boolean",
+          "default": true,
+          "description": "%configuration.shadowRequireShiftForSymbols%"
+        },
+        "vscodePluginSwimming.shadowShowInlineSuggestion": {
+          "type": "boolean",
+          "default": true,
+          "description": "%configuration.shadowShowInlineSuggestion%"
+        },
+        "vscodePluginSwimming.shadowRequireManualLineBreaksAndIndentation": {
+          "type": "boolean",
+          "default": false,
+          "description": "%configuration.shadowRequireManualLineBreaksAndIndentation%"
+        },
+        "vscodePluginSwimming.lookWhileTypingStepLines": {
+          "type": "number",
+          "minimum": 1,
+          "default": 3,
+          "description": "%configuration.lookWhileTypingStepLines%"
+        },
+        "vscodePluginSwimming.lookWhileTypingScrollMode": {
+          "type": "string",
+          "enum": ["line", "cursor"],
+          "default": "line",
+          "description": "%configuration.lookWhileTypingScrollMode%"
+        },
+        "vscodePluginSwimming.lookWhileTypingScrollUpKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1,
+          "default": "-",
+          "description": "%configuration.lookWhileTypingScrollUpKey%"
+        },
+        "vscodePluginSwimming.lookWhileTypingScrollDownKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1,
+          "default": "=",
+          "description": "%configuration.lookWhileTypingScrollDownKey%"
+        },
+        "vscodePluginSwimming.lookWhileTypingCloseTargetKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1,
+          "default": "\\",
+          "description": "%configuration.lookWhileTypingCloseTargetKey%"
+        },
+        "vscodePluginSwimming.lookWhileTypingReopenTargetKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1,
+          "default": "`",
+          "description": "%configuration.lookWhileTypingReopenTargetKey%"
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "pnpm run compile",
     "compile": "tsc -p ./",
+    "test": "pnpm run compile && node --test test/*.test.js",
     "watch": "tsc -watch -p ./",
-    "vsce:publish": "npx vsce package && npx vsce publish"
+    "vsce:package": "pnpm exec vsce package --no-dependencies --out swimming-local.vsix",
+    "vsce:publish": "pnpm exec vsce package && pnpm exec vsce publish"
   },
   "repository": {
     "url": "https://github.com/zy445566/vscode-plugin-swimming"
@@ -108,9 +295,9 @@
   },
   "homepage": "https://github.com/zy445566/vscode-plugin-swimming#readme",
   "devDependencies": {
-    "@types/node": "^16.18.23",
-    "@types/vscode": "1.45.1",
-    "@vscode/vsce": "^2.19.0",
-    "typescript": "^3.9.3"
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.100.0",
+    "@vscode/vsce": "^2.32.0",
+    "typescript": "^5.8.2"
   }
 }
