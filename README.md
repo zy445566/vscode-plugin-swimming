@@ -31,7 +31,7 @@ code --install-extension ./swimming-local.vsix --force
 # 使用方法
 此工具需要配合低声音键盘，即使抚摸键盘也可以完美演绎敲键盘的样子！
 
-选中代码后，右击菜单中选中Code Rewriting即可，也可以右键暂停或继续。如下图：
+选中代码后，右击菜单中选中划水选择对应划水模式即可，也可以右键暂停或继续。如下图：
 
 ![使用图片](https://raw.githubusercontent.com/zy445566/vscode-plugin-swimming/master/cr.png)
 
