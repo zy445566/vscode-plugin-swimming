@@ -22,6 +22,7 @@
   "configuration.shadowShowInlineSuggestion": "Show the current line ghost text in Shadow Rewriting.",
   "configuration.shadowRequireManualLineBreaksAndIndentation": "Require Enter for line breaks and Tab for indentation in Shadow Rewriting.",
   "configuration.lookWhileTypingStepLines": "Number of lines to scroll the working editor for each Look While Typing action.",
+  "configuration.lookWhileTypingScrollMode": "Look While Typing scroll mode: line jumps across document lines, cursor moves the working editor cursor just beyond the viewport for small steps through long wrapped lines.",
   "configuration.lookWhileTypingScrollUpKey": "Single-character key that scrolls the working editor up in Look While Typing.",
   "configuration.lookWhileTypingScrollDownKey": "Single-character key that scrolls the working editor down in Look While Typing.",
   "configuration.lookWhileTypingCloseTargetKey": "Single-character key that closes the working editor in Look While Typing.",

@@ -28,11 +28,13 @@ import {
     getShadowInputCharacters,
     isShadowPrefixAligned as isTargetPrefixAligned,
     KeyedAsyncQueue,
+    shouldAbandonShadowSession,
 } from './shadowInline';
 import {
     getLookWhileTypingAction,
     getLookWhileTypingLabelPattern,
     getLookWhileTypingRenamedDocumentUri,
+    getLookWhileTypingCursorScrollPosition,
     getLookWhileTypingScrollLine,
     getLookWhileTypingTargetLabel,
     isLookWhileTypingTarget,
@@ -40,6 +42,7 @@ import {
 
 const TYPE_COMMAND = 'type';
 const DEFAULT_TYPE_COMMAND = 'default:type';
+const DEFAULT_DELETE_LEFT_COMMAND = 'deleteLeft';
 const SHADOW_CONTEXT = 'vscodePluginSwimming.shadowActive';
 const SHADOW_DELETE_LEFT_COMMAND = 'extension.swimming.shadowDeleteLeft';
 const SHADOW_ENTER_COMMAND = 'extension.swimming.shadowEnter';
@@ -116,6 +119,14 @@ function getLookWhileTypingStepLines() {
         .get<number>('vscodePluginSwimming.lookWhileTypingStepLines');
 
     return typeof configuredStepLines === 'number' ? configuredStepLines : 3;
+}
+
+function getLookWhileTypingScrollMode() {
+    const configuredMode = workspace
+        .getConfiguration()
+        .get<string>('vscodePluginSwimming.lookWhileTypingScrollMode');
+
+    return configuredMode === 'cursor' ? 'cursor' : 'line';
 }
 
 function getLookWhileTypingControlKey(
@@ -423,12 +434,38 @@ function scrollLookWhileTyping(direction: -1 | 1) {
         return;
     }
 
+    const stepLines = getLookWhileTypingStepLines();
+
+    if (getLookWhileTypingScrollMode() === 'cursor') {
+        const lastVisibleLine = visibleRange.end.line;
+        const lastVisibleLineLength = lastVisibleLine < targetTextEditor.document.lineCount
+            ? targetTextEditor.document.lineAt(lastVisibleLine).text.length
+            : 0;
+        const scrollTarget = getLookWhileTypingCursorScrollPosition({
+            firstVisibleLine: visibleRange.start.line,
+            firstVisibleCharacter: visibleRange.start.character,
+            lastVisibleLine,
+            lastVisibleCharacter: visibleRange.end.character,
+            lineCount: targetTextEditor.document.lineCount,
+            lastVisibleLineLength,
+            direction,
+            stepLines,
+        });
+        const targetPosition = new Position(scrollTarget.line, scrollTarget.character);
+        targetTextEditor.selection = new Selection(targetPosition, targetPosition);
+        targetTextEditor.revealRange(
+            new Range(targetPosition, targetPosition),
+            TextEditorRevealType.Default
+        );
+        return;
+    }
+
     const targetLine = getLookWhileTypingScrollLine({
         firstVisibleLine: visibleRange.start.line,
         lastVisibleLine: visibleRange.end.line,
         lineCount: targetTextEditor.document.lineCount,
         direction,
-        stepLines: getLookWhileTypingStepLines(),
+        stepLines,
     });
     const targetPosition = new Position(targetLine, 0);
     targetTextEditor.selection = new Selection(targetPosition, targetPosition);
@@ -788,6 +825,20 @@ function canAdvanceShadowSession(textEditor: TextEditor, session: RewriteSession
         && textEditor.document.offsetAt(textEditor.selection.active) === getShadowCursorOffset(textEditor, session);
 }
 
+function shouldAbandonShadowSessionAfterExternalEdit(
+    textEditor: TextEditor,
+    session: RewriteSession
+) {
+    return shouldAbandonShadowSession(
+        session,
+        getActualShadowPrefix(textEditor, session),
+        textEditor.document.offsetAt(textEditor.selection.active) === getShadowCursorOffset(
+            textEditor,
+            session
+        )
+    );
+}
+
 function deleteShadowOverflow(textEditor: TextEditor, session: RewriteSession) {
     const expectedOffset = textEditor.document.offsetAt(getSessionPosition(session));
     const actualPosition = textEditor.selection.active;
@@ -1136,6 +1187,11 @@ async function handleShadowType(
             return;
         }
 
+        if (shouldAbandonShadowSessionAfterExternalEdit(textEditor, shadowSession)) {
+            clearShadowSession(editorKey);
+            return commands.executeCommand(DEFAULT_TYPE_COMMAND, args);
+        }
+
         const typedCharacters = getShadowInputCharacters(typedText);
         for (let index = 0; index < typedCharacters.length; index += 1) {
             if (shadowSessionMap.get(editorKey) !== shadowSession) {
@@ -1174,12 +1230,20 @@ async function handleShadowDeleteLeft() {
     const editorKey = getEditorKey(textEditor);
     const shadowSession = shadowSessionMap.get(editorKey);
     if (!shadowSession) {
-        return;
+        return commands.executeCommand(DEFAULT_DELETE_LEFT_COMMAND);
     }
 
     return shadowInputQueue.enqueue(editorKey, async () => {
-        if (shadowSessionMap.get(editorKey) !== shadowSession
-            || !hasShadowOverflow(textEditor, shadowSession)) {
+        if (shadowSessionMap.get(editorKey) !== shadowSession) {
+            return;
+        }
+
+        if (shouldAbandonShadowSessionAfterExternalEdit(textEditor, shadowSession)) {
+            clearShadowSession(editorKey);
+            return commands.executeCommand(DEFAULT_DELETE_LEFT_COMMAND);
+        }
+
+        if (!hasShadowOverflow(textEditor, shadowSession)) {
             return;
         }
 

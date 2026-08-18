@@ -9,6 +9,7 @@ const {
     getShadowInputCharacters,
     isShadowPrefixAligned,
     KeyedAsyncQueue,
+    shouldAbandonShadowSession,
 } = require('../out/shadowInline');
 
 test('shows the next line ghost text after a line break', () => {
@@ -61,6 +62,28 @@ test('checks alignment against the session prefix instead of a stale editor sele
 
     assert.equal(isShadowPrefixAligned(session, 'first\n'), true);
     assert.equal(isShadowPrefixAligned(session, 'first'), false);
+});
+
+test('abandons unrecoverable shadow drift but keeps recoverable overflow for Backspace', () => {
+    const session = {
+        beforeText: 'abc',
+        index: 1,
+        line: 0,
+        character: 1,
+    };
+
+    assert.equal(
+        shouldAbandonShadowSession(session, '', true),
+        true
+    );
+    assert.equal(
+        shouldAbandonShadowSession(session, 'a中', false),
+        false
+    );
+    assert.equal(
+        shouldAbandonShadowSession(session, 'a', false),
+        true
+    );
 });
 
 test('blocks generic typing while manual line breaks or indentation are required', () => {

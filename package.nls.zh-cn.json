@@ -22,6 +22,7 @@
   "configuration.shadowShowInlineSuggestion": "影子重写时显示当前代码行的 ghost text 提示。",
   "configuration.shadowRequireManualLineBreaksAndIndentation": "影子重写时要求用 Enter 换行、用 Tab 推进缩进。",
   "configuration.lookWhileTypingStepLines": "边打边看时，每次滚动工作编辑器的行数。",
+  "configuration.lookWhileTypingScrollMode": "边打边看的滚动方式：line 为跨文档行移动，cursor 为将工作窗口光标移动到可视区域之外，使自动换行的超长行小幅滚动。",
   "configuration.lookWhileTypingScrollUpKey": "边打边看时，向上滚动工作编辑器的单字符按键。",
   "configuration.lookWhileTypingScrollDownKey": "边打边看时，向下滚动工作编辑器的单字符按键。",
   "configuration.lookWhileTypingCloseTargetKey": "边打边看时，关闭工作编辑器的单字符按键。",

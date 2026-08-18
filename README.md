@@ -6,6 +6,28 @@ VSCode模拟写代码，划水，摸鱼神器。代码写的快，提早完工�
 # 安装方法
 在vscode的扩展栏，在应用商店中搜索“swimming”,点击"install"或“安装”
 
+## 本地打包安装
+
+项目最低支持 Node.js 20，仓库中的 `.nvmrc` 默认使用 Node.js 24。进入项目目录后执行：
+
+```bash
+nvm use
+corepack enable
+pnpm install
+pnpm test
+pnpm run vsce:package
+```
+
+打包成功后，会在项目根目录生成 `swimming-local.vsix`。可以通过命令行安装或覆盖已有版本：
+
+```bash
+code --install-extension ./swimming-local.vsix --force
+```
+
+也可以在 VS Code 扩展页面点击右上角 `...`，选择 `从 VSIX 安装...`，然后选中 `swimming-local.vsix`。安装完成后执行 `Developer: Reload Window` 重新加载窗口。
+
+代码更新后，重新运行 `pnpm test`、打包命令和带 `--force` 的安装命令即可覆盖本地版本。此流程只生成并安装本地 VSIX，不会发布到扩展市场。
+
 # 使用方法
 此工具需要配合低声音键盘，即使抚摸键盘也可以完美演绎敲键盘的样子！
 
@@ -33,6 +55,7 @@ VSCode模拟写代码，划水，摸鱼神器。代码写的快，提早完工�
 * 在右键菜单的 `Swimming` 子菜单中选择 `边打边看：重命名工作编辑器`，可为工作区文件设置自定义标签页名称
 * 可以在 VS Code 设置中搜索 `lookWhileTypingScrollUpKey`、`lookWhileTypingScrollDownKey`、`lookWhileTypingCloseTargetKey`、`lookWhileTypingReopenTargetKey` 自定义四个单字符按键
 * 可以在 VS Code 设置中搜索 `lookWhileTypingStepLines` 调整每次滚动的行数
+* 可以在 VS Code 设置中搜索 `lookWhileTypingScrollMode` 切换滚动方式：`line` 为跨文档行移动（默认），`cursor` 为移动工作窗口光标，适合自动换行后占据多行的超长文本
 * 右键选择 `边打边看：清除工作窗口` 后，三个按键都会恢复为普通输入
 
 如果想要快捷键暂停代码重写，可以直接使用以下按键暂停：

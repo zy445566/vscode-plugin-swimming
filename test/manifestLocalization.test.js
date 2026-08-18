@@ -100,3 +100,38 @@ test('keeps Look While Typing controls as single-character settings', () => {
         false
     );
 });
+
+test('offers line and cursor Look While Typing scroll modes', () => {
+    const configuration = packageJson.contributes.configuration.properties;
+    const scrollMode = configuration['vscodePluginSwimming.lookWhileTypingScrollMode'];
+
+    assert.deepEqual(scrollMode.enum, ['line', 'cursor']);
+    assert.equal(scrollMode.default, 'line');
+});
+
+test('documents the complete local VSIX packaging and installation workflow', () => {
+    const readme = fs.readFileSync(path.join(projectRoot, 'README.md'), 'utf8');
+
+    assert.match(readme, /pnpm install/);
+    assert.match(readme, /pnpm test/);
+    assert.match(readme, /pnpm run vsce:package/);
+    assert.match(readme, /code --install-extension .*\.vsix/);
+});
+
+test('includes the compiled extension entrypoint in local VSIX packages', () => {
+    assert.equal(
+        packageJson.scripts['vsce:package'],
+        'pnpm exec vsce package --no-dependencies --out swimming-local.vsix'
+    );
+    assert.equal(packageJson.files, undefined);
+});
+
+test('keeps compiled output available to the VSIX packager', () => {
+    const vscodeIgnore = fs.readFileSync(
+        path.join(projectRoot, '.vscodeignore'),
+        'utf8'
+    );
+
+    assert.doesNotMatch(vscodeIgnore, /^out\/?$/m);
+    assert.match(vscodeIgnore, /^node_modules\/\*\*$/m);
+});

@@ -106,3 +106,74 @@ export function getLookWhileTypingScrollLine({
 
     return Math.min(Math.max(nextLine, 0), lastDocumentLine);
 }
+
+export type LookWhileTypingScrollMode = 'line' | 'cursor';
+
+export type LookWhileTypingCursorScrollRequest = {
+    firstVisibleLine: number;
+    firstVisibleCharacter: number;
+    lastVisibleLine: number;
+    lastVisibleCharacter: number;
+    lineCount: number;
+    lastVisibleLineLength: number;
+    direction: -1 | 1;
+    stepLines: number;
+};
+
+export type LookWhileTypingScrollPosition = {
+    line: number;
+    character: number;
+};
+
+/**
+ * Moves the target cursor just outside the current viewport. VS Code then
+ * reveals that position by the minimum amount, including inside a wrapped
+ * logical line where line-based movement would otherwise jump too far.
+ */
+export function getLookWhileTypingCursorScrollPosition({
+    firstVisibleLine,
+    firstVisibleCharacter,
+    lastVisibleLine,
+    lastVisibleCharacter,
+    lineCount,
+    lastVisibleLineLength,
+    direction,
+    stepLines,
+}: LookWhileTypingCursorScrollRequest): LookWhileTypingScrollPosition {
+    if (lineCount <= 0) {
+        return { line: 0, character: 0 };
+    }
+
+    const lastDocumentLine = lineCount - 1;
+    const normalizedStepLines = Math.max(1, Math.floor(stepLines));
+    if (direction > 0) {
+        if (lastVisibleCharacter < lastVisibleLineLength) {
+            return {
+                line: lastVisibleLine,
+                character: lastVisibleCharacter + 1,
+            };
+        }
+
+        const targetLine = Math.min(
+            lastVisibleLine + normalizedStepLines,
+            lastDocumentLine
+        );
+        if (targetLine === lastVisibleLine) {
+            return { line: lastVisibleLine, character: lastVisibleCharacter };
+        }
+        return { line: targetLine, character: 0 };
+    }
+
+    if (firstVisibleCharacter > 0) {
+        return {
+            line: firstVisibleLine,
+            character: firstVisibleCharacter - 1,
+        };
+    }
+
+    const targetLine = Math.max(firstVisibleLine - normalizedStepLines, 0);
+    if (targetLine === firstVisibleLine) {
+        return { line: firstVisibleLine, character: firstVisibleCharacter };
+    }
+    return { line: targetLine, character: 0 };
+}

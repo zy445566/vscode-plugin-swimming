@@ -233,6 +233,12 @@
           "default": 3,
           "description": "%configuration.lookWhileTypingStepLines%"
         },
+        "vscodePluginSwimming.lookWhileTypingScrollMode": {
+          "type": "string",
+          "enum": ["line", "cursor"],
+          "default": "line",
+          "description": "%configuration.lookWhileTypingScrollMode%"
+        },
         "vscodePluginSwimming.lookWhileTypingScrollUpKey": {
           "type": "string",
           "minLength": 1,
@@ -269,6 +275,7 @@
     "compile": "tsc -p ./",
     "test": "pnpm run compile && node --test test/*.test.js",
     "watch": "tsc -watch -p ./",
+    "vsce:package": "pnpm exec vsce package --no-dependencies --out swimming-local.vsix",
     "vsce:publish": "pnpm exec vsce package && pnpm exec vsce publish"
   },
   "repository": {

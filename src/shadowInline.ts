@@ -96,6 +96,19 @@ export function isShadowPrefixAligned(
     return actualPrefix === session.beforeText.slice(0, session.index);
 }
 
+export function shouldAbandonShadowSession(
+    session: ShadowInlineSession,
+    actualPrefix: string,
+    cursorAtSessionPosition: boolean
+) {
+    const expectedPrefix = session.beforeText.slice(0, session.index);
+    const hasRecoverableOverflow = actualPrefix.startsWith(expectedPrefix)
+        && actualPrefix.length > expectedPrefix.length;
+
+    return !hasRecoverableOverflow
+        && (actualPrefix !== expectedPrefix || !cursorAtSessionPosition);
+}
+
 export function canUseGenericShadowTyping(
     policy: ShadowGenericTypingPolicy
 ) {
