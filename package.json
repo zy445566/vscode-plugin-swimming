@@ -2,7 +2,7 @@
   "name": "vscode-plugin-swimming",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "1.1.2",
+  "version": "2.0.0",
   "publisher": "swimming",
   "icon": "128.png",
   "engines": {
@@ -235,7 +235,10 @@
         },
         "vscodePluginSwimming.lookWhileTypingScrollMode": {
           "type": "string",
-          "enum": ["line", "cursor"],
+          "enum": [
+            "line",
+            "cursor"
+          ],
           "default": "line",
           "description": "%configuration.lookWhileTypingScrollMode%"
         },
@@ -298,6 +301,7 @@
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.100.0",
     "@vscode/vsce": "^2.32.0",
+    "pnpm": "^11.22.0",
     "typescript": "^5.8.2"
   }
 }
