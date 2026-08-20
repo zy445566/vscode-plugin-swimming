@@ -15,6 +15,7 @@ import {
     TextEditor,
     TextEditorEdit,
     TextEditorRevealType,
+    TextEditorSelectionChangeKind,
     TextDocument,
     Uri,
     window,
@@ -29,6 +30,8 @@ import {
     isShadowPrefixAligned as isTargetPrefixAligned,
     KeyedAsyncQueue,
     shouldAbandonShadowSession,
+    shouldAbandonShadowSessionAfterSelectionChange,
+    shouldContinueRewrite,
 } from './shadowInline';
 import {
     getLookWhileTypingAction,
@@ -43,6 +46,7 @@ import {
 const TYPE_COMMAND = 'type';
 const DEFAULT_TYPE_COMMAND = 'default:type';
 const DEFAULT_DELETE_LEFT_COMMAND = 'deleteLeft';
+const DEFAULT_TAB_COMMAND = 'tab';
 const SHADOW_CONTEXT = 'vscodePluginSwimming.shadowActive';
 const SHADOW_DELETE_LEFT_COMMAND = 'extension.swimming.shadowDeleteLeft';
 const SHADOW_ENTER_COMMAND = 'extension.swimming.shadowEnter';
@@ -639,6 +643,31 @@ function clearAllShadowSessions() {
     refreshInlineSuggestion();
 }
 
+function handleShadowSelectionChange(
+    textEditor: TextEditor,
+    selections: readonly Selection[],
+    isUserNavigation: boolean
+) {
+    const editorKey = getEditorKey(textEditor);
+    const shadowSession = shadowSessionMap.get(editorKey);
+    if (!shadowSession) {
+        return;
+    }
+
+    const cursors = selections.map(({ active }) => ({
+        line: active.line,
+        character: active.character,
+    }));
+    if (shouldAbandonShadowSessionAfterSelectionChange(
+        shadowSession,
+        cursors,
+        isUserNavigation
+    )) {
+        clearShadowSession(editorKey);
+         window.showInformationMessage(l10n.t('Shadow Rewriting stopped, cause by user moved input cursor. can be manual restart.'));
+    }
+}
+
 function showPauseinfo(textEditor: TextEditor) {
     if (isWriteCodePauseMap.get(getEditorKey(textEditor))) {
         window.showInformationMessage(l10n.t('Code rewriting is paused.'));
@@ -1012,16 +1041,19 @@ function rewriteCodeWithStartAndEnd({
 
     const runWrite = function() {
         const inputTimeout: NodeJS.Timeout = setTimeout(() => {
+            if (!shouldContinueRewrite(
+                isWritingCodeMap.get(editorKey),
+                textEditor.document.isClosed
+            )) {
+                return recycleWrite(inputTimeout);
+            }
+
             if (isWriteCodePauseMap.get(editorKey)) {
                 return textEditor.edit(() => undefined)
                     .then(() => runWrite(), (reason) => {
                         recycleWrite(inputTimeout);
                         throw new Error(String(reason));
                     });
-            }
-
-            if (textEditor.document.isClosed) {
-                return recycleWrite(inputTimeout);
             }
 
             if (session.index >= session.beforeText.length) {
@@ -1118,7 +1150,6 @@ function closeWriteCode(
     clearAllShadowSessions();
     isWriteCodePauseMap.clear();
     isWritingCodeMap.clear();
-    commands.executeCommand('workbench.action.reloadWindow');
 }
 
 function pauseWriteCode(
@@ -1261,12 +1292,17 @@ async function handleShadowEnter() {
     const editorKey = getEditorKey(textEditor);
     const shadowSession = shadowSessionMap.get(editorKey);
     if (!shadowSession) {
-        return;
+        return commands.executeCommand(DEFAULT_TYPE_COMMAND, { text: '\n' });
     }
 
     return shadowInputQueue.enqueue(editorKey, async () => {
         if (shadowSessionMap.get(editorKey) !== shadowSession) {
-            return;
+            return commands.executeCommand(DEFAULT_TYPE_COMMAND, { text: '\n' });
+        }
+
+        if (!canAdvanceShadowSession(textEditor, shadowSession)) {
+            clearShadowSession(editorKey);
+            return commands.executeCommand(DEFAULT_TYPE_COMMAND, { text: '\n' });
         }
 
         if (!getShadowRequireManualLineBreaksAndIndentation()) {
@@ -1289,12 +1325,17 @@ async function handleShadowTab() {
     const editorKey = getEditorKey(textEditor);
     const shadowSession = shadowSessionMap.get(editorKey);
     if (!shadowSession) {
-        return;
+        return commands.executeCommand(DEFAULT_TAB_COMMAND);
     }
 
     return shadowInputQueue.enqueue(editorKey, async () => {
         if (shadowSessionMap.get(editorKey) !== shadowSession) {
-            return;
+            return commands.executeCommand(DEFAULT_TAB_COMMAND);
+        }
+
+        if (!canAdvanceShadowSession(textEditor, shadowSession)) {
+            clearShadowSession(editorKey);
+            return commands.executeCommand(DEFAULT_TAB_COMMAND);
         }
 
         if (!getShadowRequireManualLineBreaksAndIndentation()) {
@@ -1396,6 +1437,14 @@ export function activate(context: ExtensionContext) {
     context.subscriptions.push(
         registerShadowInlineCompletionProvider(),
         window.onDidChangeVisibleTextEditors(updateLookWhileTypingContext),
+        window.onDidChangeTextEditorSelection(({ textEditor, selections, kind }) => {
+            handleShadowSelectionChange(
+                textEditor,
+                selections,
+                kind === TextEditorSelectionChangeKind.Keyboard
+                    || kind === TextEditorSelectionChangeKind.Mouse
+            );
+        }),
         workspace.onDidRenameFiles(({ files }) => {
             void updateLookWhileTypingTargetAfterWorkspaceRename(context, files);
         }),
