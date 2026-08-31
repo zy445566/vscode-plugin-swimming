@@ -12,6 +12,7 @@
   "No code available for Shadow Rewriting.": "No code available for Shadow Rewriting.",
   "Shadow Rewriting started. Press Esc to exit.": "Shadow Rewriting started. Press Esc to exit.",
   "Shadow Rewriting stopped.": "Shadow Rewriting stopped.",
+  "Shadow Rewriting stopped, cause by user moved input cursor. can be manual restart.": "Shadow Rewriting stopped, cause by user moved input cursor. can be manual restart.",
   "Code rewriting is not active, so it cannot be paused.": "Code rewriting is not active, so it cannot be paused.",
   "Switched to {0} mode.": "Switched to {0} mode.",
   "No closed Look While Typing target to reopen.": "No closed Look While Typing target to reopen.",

@@ -109,6 +109,30 @@ export function shouldAbandonShadowSession(
         && (actualPrefix !== expectedPrefix || !cursorAtSessionPosition);
 }
 
+export function shouldAbandonShadowSessionAfterSelectionChange(
+    session: ShadowInlineSession,
+    cursors: readonly ShadowCursor[],
+    isUserNavigation = false
+) {
+    if (!isUserNavigation) {
+        return false;
+    }
+
+    if (cursors.length !== 1) {
+        return true;
+    }
+
+    return cursors[0].line !== session.line
+        || cursors[0].character !== session.character;
+}
+
+export function shouldContinueRewrite(
+    isWriting: boolean | undefined,
+    documentIsClosed: boolean
+) {
+    return isWriting === true && !documentIsClosed;
+}
+
 export function canUseGenericShadowTyping(
     policy: ShadowGenericTypingPolicy
 ) {

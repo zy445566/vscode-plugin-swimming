@@ -12,6 +12,7 @@
   "No code available for Shadow Rewriting.": "没有可用于影子重写的代码。",
   "Shadow Rewriting started. Press Esc to exit.": "影子重写已开始。按 Esc 退出。",
   "Shadow Rewriting stopped.": "影子重写已停止。",
+  "Shadow Rewriting stopped, cause by user moved input cursor. can be manual restart.": "因光标被移动，影子重写已停止，可手动重新开始。",
   "Code rewriting is not active, so it cannot be paused.": "代码重写尚未启动，无法暂停。",
   "Switched to {0} mode.": "已切换到 {0} 模式。",
   "No closed Look While Typing target to reopen.": "没有可重新打开的边打边看工作编辑器。",
