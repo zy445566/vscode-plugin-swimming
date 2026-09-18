@@ -9,6 +9,7 @@
   "command.switchWriteMode": "Switch Write Mode",
   "command.exitShadowRewrite": "Exit Shadow Rewriting",
   "command.selectLookWhileTypingTarget": "Look While Typing: Select Working Editor",
+  "command.selectLookWhileTypingCoverEditor": "Look While Typing: Select Cover Editor",
   "command.clearLookWhileTypingTarget": "Look While Typing: Clear Working Editor",
   "command.scrollLookWhileTypingUp": "Look While Typing: Scroll Working Editor Up",
   "command.scrollLookWhileTypingDown": "Look While Typing: Scroll Working Editor Down",
@@ -26,5 +27,11 @@
   "configuration.lookWhileTypingScrollUpKey": "Single-character key that scrolls the working editor up in Look While Typing.",
   "configuration.lookWhileTypingScrollDownKey": "Single-character key that scrolls the working editor down in Look While Typing.",
   "configuration.lookWhileTypingCloseTargetKey": "Single-character key that closes the working editor in Look While Typing.",
-  "configuration.lookWhileTypingReopenTargetKey": "Single-character key that reopens the last closed working editor in Look While Typing."
+  "configuration.lookWhileTypingReopenTargetKey": "Single-character key that reopens the last closed working editor in Look While Typing.",
+  "configuration.lookWhileTypingTerminalNavigationMode": "Terminal navigation behavior used by Look While Typing.",
+  "configuration.lookWhileTypingTerminalNavigationMode.w3m": "Scroll the w3m document by small steps using its J/K screen-scroll commands.",
+  "configuration.lookWhileTypingTerminalNavigationMode.scrollback": "Scroll the VS Code terminal history without controlling the foreground program.",
+  "configuration.lookWhileTypingTerminalNavigationMode.cursorKeys": "Send standard terminal Up/Down key sequences to the foreground program.",
+  "configuration.lookWhileTypingTerminalNavigationMode.applicationCursorKeys": "Send application-mode Up/Down key sequences to the foreground program.",
+  "configuration.lookWhileTypingTerminalNavigationMode.pageKeys": "Send Page Up/Page Down key sequences to the foreground program."
 }

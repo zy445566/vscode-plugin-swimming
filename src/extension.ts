@@ -11,11 +11,13 @@ import {
     Position,
     Range,
     Selection,
+    TabGroup,
+    TabInputTerminal,
     TabInputText,
+    Terminal,
     TextEditor,
     TextEditorEdit,
     TextEditorRevealType,
-    TextEditorSelectionChangeKind,
     TextDocument,
     Uri,
     window,
@@ -27,21 +29,33 @@ import {
     getCurrentShadowLineRemainder,
     getGhostTextForCursor,
     getShadowInputCharacters,
-    isShadowPrefixAligned as isTargetPrefixAligned,
     KeyedAsyncQueue,
-    shouldAbandonShadowSession,
-    shouldAbandonShadowSessionAfterSelectionChange,
     shouldContinueRewrite,
+    shouldUseShadowInput,
+    transformShadowAnchorOffset,
 } from './shadowInline';
 import {
     getLookWhileTypingAction,
+    getLookWhileTypingCoverTransition,
+    getLookWhileTypingCloseTargetKind,
+    getLookWhileTypingInputTokens,
     getLookWhileTypingLabelPattern,
     getLookWhileTypingRenamedDocumentUri,
+    getLookWhileTypingRestoreTransition,
     getLookWhileTypingCursorScrollPosition,
     getLookWhileTypingScrollLine,
+    getLookWhileTypingTerminalInputSequence,
+    getLookWhileTypingTerminalScrollCommand,
     getLookWhileTypingTargetLabel,
+    getLookWhileTypingTargetKind,
     isLookWhileTypingTarget,
+    LookWhileTypingTerminalNavigationMode,
 } from './lookWhileTyping';
+import {
+    createHumanRewritePlan,
+    HumanRewriteAction,
+} from './humanRewrite';
+import { getNextRoundRobinIndex } from './multiRewrite';
 
 const TYPE_COMMAND = 'type';
 const DEFAULT_TYPE_COMMAND = 'default:type';
@@ -52,10 +66,16 @@ const SHADOW_DELETE_LEFT_COMMAND = 'extension.swimming.shadowDeleteLeft';
 const SHADOW_ENTER_COMMAND = 'extension.swimming.shadowEnter';
 const SHADOW_TAB_COMMAND = 'extension.swimming.shadowTab';
 const LOOK_WHILE_TYPING_CONTEXT = 'vscodePluginSwimming.lookWhileTypingTargetVisible';
+const LOOK_WHILE_TYPING_EDITOR_CONTEXT = 'vscodePluginSwimming.lookWhileTypingEditorTargetVisible';
 const LOOK_WHILE_TYPING_CLOSED_TARGET_CONTEXT = 'vscodePluginSwimming.lookWhileTypingClosedTargetAvailable';
 const LOOK_WHILE_TYPING_TARGET_STATE_KEY = 'lookWhileTyping.target';
 const LOOK_WHILE_TYPING_CLOSED_TARGET_STATE_KEY = 'lookWhileTyping.closedTarget';
+const LOOK_WHILE_TYPING_TERMINAL_STATE_KEY = 'lookWhileTyping.terminalName';
+const LOOK_WHILE_TYPING_COVER_TARGET_STATE_KEY = 'lookWhileTyping.coverTarget';
+const LOOK_WHILE_TYPING_HIDDEN_TARGET_STATE_KEY = 'lookWhileTyping.hiddenTarget';
+const LOOK_WHILE_TYPING_HIDDEN_TERMINAL_STATE_KEY = 'lookWhileTyping.hiddenTerminalName';
 const LOOK_WHILE_TYPING_SELECT_TARGET_COMMAND = 'extension.swimming.selectLookWhileTypingTarget';
+const LOOK_WHILE_TYPING_SELECT_COVER_COMMAND = 'extension.swimming.selectLookWhileTypingCoverEditor';
 const LOOK_WHILE_TYPING_CLEAR_TARGET_COMMAND = 'extension.swimming.clearLookWhileTypingTarget';
 const LOOK_WHILE_TYPING_SCROLL_UP_COMMAND = 'extension.swimming.scrollLookWhileTypingUp';
 const LOOK_WHILE_TYPING_SCROLL_DOWN_COMMAND = 'extension.swimming.scrollLookWhileTypingDown';
@@ -72,6 +92,10 @@ type RewriteSession = {
     character: number;
     initLine: number;
     initCharacter: number;
+    anchorOffset: number;
+    initAnchorOffset: number;
+    humanActions?: HumanRewriteAction[];
+    humanActionIndex?: number;
 };
 
 type LookWhileTypingTarget = {
@@ -85,13 +109,10 @@ type LookWhileTypingTarget = {
     previousCustomLabelsEnabled?: boolean;
 };
 
-function getReWriteSpeed() {
-    const reWriteSpeed = workspace
-        .getConfiguration()
-        .get<number>('vscodePluginSwimming.reWriteSpeed');
-
-    return typeof reWriteSpeed === 'number' ? reWriteSpeed : 0;
-}
+type EditorRewriteTarget = {
+    textEditor: TextEditor;
+    session: RewriteSession;
+};
 
 function getShadowRequireSymbolKey() {
     const requireSymbolKey = workspace
@@ -131,6 +152,25 @@ function getLookWhileTypingScrollMode() {
         .get<string>('vscodePluginSwimming.lookWhileTypingScrollMode');
 
     return configuredMode === 'cursor' ? 'cursor' : 'line';
+}
+
+function getLookWhileTypingTerminalNavigationMode() {
+    const configuredMode = workspace
+        .getConfiguration()
+        .get<LookWhileTypingTerminalNavigationMode>(
+            'vscodePluginSwimming.lookWhileTypingTerminalNavigationMode'
+        );
+    switch (configuredMode) {
+        case 'w3m':
+        case 'cursorKeys':
+        case 'applicationCursorKeys':
+        case 'pageKeys':
+        case 'scrollback':
+            return configuredMode;
+
+        default:
+            return 'w3m';
+    }
 }
 
 function getLookWhileTypingControlKey(
@@ -189,12 +229,32 @@ const isWriteCodePauseMap: Map<string, boolean> = new Map();
 const isWritingCodeMap: Map<string, boolean> = new Map();
 const shadowSessionMap: Map<string, RewriteSession> = new Map();
 const shadowInputQueue = new KeyedAsyncQueue();
+const shadowProgrammaticEditKeys = new Set<string>();
 let lookWhileTypingTarget: LookWhileTypingTarget | undefined;
 let lastClosedLookWhileTypingTarget: LookWhileTypingTarget | undefined;
+let lookWhileTypingTerminal: Terminal | undefined;
+let lookWhileTypingTerminalName: string | undefined;
+let lookWhileTypingCoverTarget: LookWhileTypingTarget | undefined;
+let hiddenLookWhileTypingTarget: LookWhileTypingTarget | undefined;
+let hiddenLookWhileTypingTerminal: Terminal | undefined;
+let hiddenLookWhileTypingTerminalName: string | undefined;
 let inlineSuggestionRefreshTimer: NodeJS.Timeout | undefined;
+let shadowRoundRobinOrder: string[] = [];
+let shadowRoundRobinIndex = 0;
 
 function getEditorKey(textEditor: TextEditor) {
     return textEditor.document.uri.toString();
+}
+
+function getSelectedRewriteEditors(activeTextEditor: TextEditor) {
+    const selectedEditors = window.visibleTextEditors.filter((textEditor, index, editors) => {
+        return !textEditor.selection.isEmpty
+            && editors.findIndex((candidate) => {
+                return getEditorKey(candidate) === getEditorKey(textEditor);
+            }) === index;
+    });
+
+    return selectedEditors.length > 1 ? selectedEditors : [activeTextEditor];
 }
 
 function getLookWhileTypingTargetEditor() {
@@ -208,16 +268,110 @@ function getLookWhileTypingTargetEditor() {
     });
 }
 
+function getLookWhileTypingTargetTerminal() {
+    if (lookWhileTypingTerminal && window.terminals.includes(lookWhileTypingTerminal)) {
+        return lookWhileTypingTerminal;
+    }
+    lookWhileTypingTerminal = window.terminals.find((terminal) => {
+        return terminal.name === lookWhileTypingTerminalName;
+    });
+    return lookWhileTypingTerminal;
+}
+
+function getHiddenLookWhileTypingTerminal() {
+    if (
+        hiddenLookWhileTypingTerminal
+        && window.terminals.includes(hiddenLookWhileTypingTerminal)
+    ) {
+        return hiddenLookWhileTypingTerminal;
+    }
+    hiddenLookWhileTypingTerminal = window.terminals.find((terminal) => {
+        return terminal.name === hiddenLookWhileTypingTerminalName;
+    });
+    return hiddenLookWhileTypingTerminal;
+}
+
+function clearHiddenLookWhileTypingTarget() {
+    hiddenLookWhileTypingTarget = undefined;
+    hiddenLookWhileTypingTerminal = undefined;
+    hiddenLookWhileTypingTerminalName = undefined;
+}
+
+function getLookWhileTypingTargetTabGroup(): TabGroup | undefined {
+    if (lookWhileTypingTarget) {
+        return window.tabGroups.all.find((tabGroup) => {
+            return tabGroup.viewColumn === lookWhileTypingTarget?.viewColumn;
+        });
+    }
+
+    const targetTerminal = getLookWhileTypingTargetTerminal();
+    if (!targetTerminal) {
+        return undefined;
+    }
+
+    const terminalGroups = window.tabGroups.all.filter((tabGroup) => {
+        return tabGroup.tabs.some((tab) => tab.input instanceof TabInputTerminal);
+    });
+    const targetGroups = terminalGroups.filter((tabGroup) => {
+        return tabGroup.tabs.some((tab) => {
+            return tab.input instanceof TabInputTerminal
+                && tab.label === targetTerminal.name;
+        });
+    });
+
+    return targetGroups.find((tabGroup) => {
+        return tabGroup.isActive;
+    }) ?? targetGroups[0] ?? terminalGroups[0];
+}
+
+function getLookWhileTypingCoverCandidates() {
+    const target = lookWhileTypingTarget;
+    const coveredDocumentUris = new Set<string>();
+
+    return window.tabGroups.all.flatMap((tabGroup) => {
+        return tabGroup.tabs.flatMap((tab) => {
+            if (!(tab.input instanceof TabInputText)) {
+                return [];
+            }
+
+            const documentUri = tab.input.uri.toString();
+            if (
+                coveredDocumentUris.has(documentUri)
+                || (target && isLookWhileTypingTarget({
+                    documentUri,
+                    viewColumn: tabGroup.viewColumn,
+                }, target))
+            ) {
+                return [];
+            }
+
+            coveredDocumentUris.add(documentUri);
+            return [{ tab, tabGroup }];
+        });
+    });
+}
+
 function updateLookWhileTypingContext() {
+    const targetEditor = getLookWhileTypingTargetEditor();
+    const targetTerminal = getLookWhileTypingTargetTerminal();
     void commands.executeCommand(
         'setContext',
         LOOK_WHILE_TYPING_CONTEXT,
-        Boolean(getLookWhileTypingTargetEditor())
+        Boolean(targetEditor || targetTerminal)
+    );
+    void commands.executeCommand(
+        'setContext',
+        LOOK_WHILE_TYPING_EDITOR_CONTEXT,
+        Boolean(targetEditor)
     );
     void commands.executeCommand(
         'setContext',
         LOOK_WHILE_TYPING_CLOSED_TARGET_CONTEXT,
-        Boolean(lastClosedLookWhileTypingTarget)
+        Boolean(
+            lastClosedLookWhileTypingTarget
+            || hiddenLookWhileTypingTarget
+            || getHiddenLookWhileTypingTerminal()
+        )
     );
 }
 
@@ -229,6 +383,22 @@ async function persistLookWhileTypingTargets(context: ExtensionContext) {
     await context.workspaceState.update(
         LOOK_WHILE_TYPING_CLOSED_TARGET_STATE_KEY,
         lastClosedLookWhileTypingTarget
+    );
+    await context.workspaceState.update(
+        LOOK_WHILE_TYPING_TERMINAL_STATE_KEY,
+        lookWhileTypingTerminalName
+    );
+    await context.workspaceState.update(
+        LOOK_WHILE_TYPING_COVER_TARGET_STATE_KEY,
+        lookWhileTypingCoverTarget
+    );
+    await context.workspaceState.update(
+        LOOK_WHILE_TYPING_HIDDEN_TARGET_STATE_KEY,
+        hiddenLookWhileTypingTarget
+    );
+    await context.workspaceState.update(
+        LOOK_WHILE_TYPING_HIDDEN_TERMINAL_STATE_KEY,
+        hiddenLookWhileTypingTerminalName
     );
 }
 
@@ -333,7 +503,12 @@ async function updateLookWhileTypingTargetAfterWorkspaceRename(
             newUri: newUri.toString(),
         };
     });
-    const targets = [lookWhileTypingTarget, lastClosedLookWhileTypingTarget]
+    const targets = [
+        lookWhileTypingTarget,
+        lastClosedLookWhileTypingTarget,
+        lookWhileTypingCoverTarget,
+        hiddenLookWhileTypingTarget,
+    ]
         .filter((target): target is LookWhileTypingTarget => Boolean(target));
     let hasUpdatedTarget = false;
 
@@ -365,15 +540,17 @@ async function selectLookWhileTypingTarget(context: ExtensionContext) {
     const targetEditors = window.visibleTextEditors.filter((textEditor) => {
         return textEditor !== activeTextEditor;
     });
+    const targetTerminals = window.terminals;
 
-    if (!targetEditors.length) {
+    if (!targetEditors.length && !targetTerminals.length) {
         return window.showWarningMessage(
-            l10n.t('Open the working file beside the typing editor before selecting it.')
+            l10n.t('Open a working editor or terminal before selecting it.')
         );
     }
 
     const selectedTarget = await window.showQuickPick(
-        targetEditors.map((textEditor) => {
+        [
+            ...targetEditors.map((textEditor) => {
             const relativePath = workspace.asRelativePath(textEditor.document.uri, false);
             const selectedTarget = [lookWhileTypingTarget, lastClosedLookWhileTypingTarget]
                 .find((target) => {
@@ -381,6 +558,7 @@ async function selectLookWhileTypingTarget(context: ExtensionContext) {
                         && target.viewColumn === textEditor.viewColumn;
                 });
             return {
+                targetType: 'editor' as const,
                 label: getLookWhileTypingTargetLabel(
                     relativePath,
                     selectedTarget?.customLabel
@@ -392,8 +570,15 @@ async function selectLookWhileTypingTarget(context: ExtensionContext) {
                 ),
                 textEditor,
             };
-        }),
-        { placeHolder: l10n.t('Select the editor to scroll while you type.') }
+            }),
+            ...targetTerminals.map((terminal) => ({
+                targetType: 'terminal' as const,
+                label: `$(terminal) ${terminal.name}`,
+                description: l10n.t('Terminal'),
+                terminal,
+            })),
+        ],
+        { placeHolder: l10n.t('Select the editor or terminal to scroll while you type.') }
     );
 
     if (!selectedTarget) {
@@ -406,6 +591,22 @@ async function selectLookWhileTypingTarget(context: ExtensionContext) {
     if (lastClosedLookWhileTypingTarget) {
         await restoreLookWhileTypingCustomLabel(lastClosedLookWhileTypingTarget);
     }
+    if (hiddenLookWhileTypingTarget) {
+        await restoreLookWhileTypingCustomLabel(hiddenLookWhileTypingTarget);
+    }
+    clearHiddenLookWhileTypingTarget();
+    if (selectedTarget.targetType === 'terminal') {
+        lookWhileTypingTarget = undefined;
+        lastClosedLookWhileTypingTarget = undefined;
+        lookWhileTypingTerminal = selectedTarget.terminal;
+        lookWhileTypingTerminalName = selectedTarget.terminal.name;
+        await persistLookWhileTypingTargets(context);
+        updateLookWhileTypingContext();
+        return window.showInformationMessage(l10n.t('Look While Typing terminal selected.'));
+    }
+
+    lookWhileTypingTerminal = undefined;
+    lookWhileTypingTerminalName = undefined;
     lookWhileTypingTarget = {
         documentUri: getEditorKey(selectedTarget.textEditor),
         viewColumn: selectedTarget.textEditor.viewColumn,
@@ -416,12 +617,72 @@ async function selectLookWhileTypingTarget(context: ExtensionContext) {
     return window.showInformationMessage(l10n.t('Look While Typing target selected.'));
 }
 
+async function selectLookWhileTypingCoverEditor(context: ExtensionContext) {
+    const targetKind = getLookWhileTypingTargetKind(
+        Boolean(getLookWhileTypingTargetEditor()),
+        Boolean(getLookWhileTypingTargetTerminal())
+    );
+    if (!targetKind) {
+        return window.showInformationMessage(
+            l10n.t('Select a Look While Typing target before choosing a cover editor.')
+        );
+    }
+    if (hiddenLookWhileTypingTarget || getHiddenLookWhileTypingTerminal()) {
+        return window.showInformationMessage(
+            l10n.t('Restore the hidden Look While Typing target before choosing another cover editor.')
+        );
+    }
+
+    const candidates = getLookWhileTypingCoverCandidates();
+    if (!candidates.length) {
+        return window.showWarningMessage(
+            l10n.t('Open a text editor before choosing it as the cover editor.')
+        );
+    }
+
+    const selectedCandidate = await window.showQuickPick(
+        candidates.map(({ tab, tabGroup }) => {
+            const input = tab.input as TabInputText;
+            const relativePath = workspace.asRelativePath(input.uri, false);
+            return {
+                label: tab.label,
+                description: l10n.t(
+                    '{0} (Editor group {1})',
+                    relativePath,
+                    tabGroup.viewColumn ?? l10n.t('unknown')
+                ),
+                documentUri: input.uri.toString(),
+                viewColumn: tabGroup.viewColumn,
+            };
+        }),
+        {
+            placeHolder: l10n.t('Select the editor to display when the working target is hidden.'),
+        }
+    );
+    if (!selectedCandidate) {
+        return;
+    }
+
+    lookWhileTypingCoverTarget = {
+        documentUri: selectedCandidate.documentUri,
+        viewColumn: selectedCandidate.viewColumn,
+    };
+    await persistLookWhileTypingTargets(context);
+    return window.showInformationMessage(l10n.t('Look While Typing cover editor selected.'));
+}
+
 async function clearLookWhileTypingTarget(context: ExtensionContext) {
     if (lookWhileTypingTarget) {
         await restoreLookWhileTypingCustomLabel(lookWhileTypingTarget);
     }
+    if (hiddenLookWhileTypingTarget) {
+        await restoreLookWhileTypingCustomLabel(hiddenLookWhileTypingTarget);
+    }
     lookWhileTypingTarget = undefined;
     lastClosedLookWhileTypingTarget = undefined;
+    lookWhileTypingTerminal = undefined;
+    lookWhileTypingTerminalName = undefined;
+    clearHiddenLookWhileTypingTarget();
     await persistLookWhileTypingTargets(context);
     updateLookWhileTypingContext();
 }
@@ -479,6 +740,45 @@ function scrollLookWhileTyping(direction: -1 | 1) {
     );
 }
 
+async function scrollLookWhileTypingTerminal(direction: -1 | 1) {
+    const targetTerminal = getLookWhileTypingTargetTerminal();
+    if (!targetTerminal) {
+        updateLookWhileTypingContext();
+        return;
+    }
+
+    targetTerminal.show(true);
+    const mode = getLookWhileTypingTerminalNavigationMode();
+
+    if (mode === 'scrollback') {
+        await commands.executeCommand(
+            getLookWhileTypingTerminalScrollCommand(direction)
+        );
+        return;
+    }
+    const sequence = getLookWhileTypingTerminalInputSequence(
+        direction,
+        mode,
+        getLookWhileTypingStepLines()
+    );
+
+    targetTerminal.sendText(sequence, false);
+}
+
+async function scrollLookWhileTypingTarget(direction: -1 | 1) {
+    const targetKind = getLookWhileTypingTargetKind(
+        Boolean(getLookWhileTypingTargetEditor()),
+        Boolean(getLookWhileTypingTargetTerminal())
+    );
+    if (targetKind === 'terminal') {
+        await scrollLookWhileTypingTerminal(direction);
+        return;
+    }
+    if (targetKind === 'editor') {
+        scrollLookWhileTyping(direction);
+    }
+}
+
 function getLookWhileTypingTargetTab() {
     const target = lookWhileTypingTarget;
     if (!target) {
@@ -501,6 +801,68 @@ function getLookWhileTypingTargetTab() {
     });
 }
 
+async function hideLookWhileTypingTargetWithCover(context: ExtensionContext) {
+    const coverTarget = lookWhileTypingCoverTarget;
+    const activeTarget = lookWhileTypingTarget;
+    const targetEditor = getLookWhileTypingTargetEditor();
+    const targetTerminal = getLookWhileTypingTargetTerminal();
+    const targetKind = getLookWhileTypingTargetKind(
+        Boolean(targetEditor),
+        Boolean(targetTerminal)
+    );
+    if (!coverTarget || !targetKind) {
+        return false;
+    }
+    if (hiddenLookWhileTypingTarget || getHiddenLookWhileTypingTerminal()) {
+        return true;
+    }
+
+    const targetTabGroup = getLookWhileTypingTargetTabGroup();
+    if (!targetTabGroup) {
+        await window.showWarningMessage(
+            l10n.t('The working target must be displayed in an editor group before it can be covered.')
+        );
+        return true;
+    }
+
+    try {
+        const coverEditor = await window.showTextDocument(
+            Uri.parse(coverTarget.documentUri),
+            {
+                viewColumn: targetTabGroup.viewColumn,
+                preserveFocus: true,
+                preview: false,
+            }
+        );
+        const transition = getLookWhileTypingCoverTransition(targetKind);
+        lookWhileTypingCoverTarget = {
+            ...coverTarget,
+            viewColumn: coverEditor.viewColumn,
+        };
+        lookWhileTypingTarget = lookWhileTypingCoverTarget;
+        lookWhileTypingTerminal = undefined;
+        lookWhileTypingTerminalName = undefined;
+
+        if (transition.hiddenTargetKind === 'terminal') {
+            hiddenLookWhileTypingTarget = undefined;
+            hiddenLookWhileTypingTerminal = targetTerminal;
+            hiddenLookWhileTypingTerminalName = targetTerminal?.name;
+        } else {
+            hiddenLookWhileTypingTarget = activeTarget;
+            hiddenLookWhileTypingTerminal = undefined;
+            hiddenLookWhileTypingTerminalName = undefined;
+        }
+        await persistLookWhileTypingTargets(context);
+        updateLookWhileTypingContext();
+        return true;
+    } catch {
+        await window.showWarningMessage(
+            l10n.t('The selected cover editor could not be opened.')
+        );
+        return true;
+    }
+}
+
 async function closeLookWhileTypingTarget(context: ExtensionContext) {
     const target = lookWhileTypingTarget;
     const targetTab = getLookWhileTypingTargetTab();
@@ -518,7 +880,82 @@ async function closeLookWhileTypingTarget(context: ExtensionContext) {
     }
 }
 
+async function closeLookWhileTypingTerminal(context: ExtensionContext) {
+    const targetTerminal = getLookWhileTypingTargetTerminal();
+    if (!targetTerminal) {
+        updateLookWhileTypingContext();
+        return;
+    }
+
+    lookWhileTypingTerminal = undefined;
+    lookWhileTypingTerminalName = undefined;
+    targetTerminal.dispose();
+    await persistLookWhileTypingTargets(context);
+    updateLookWhileTypingContext();
+}
+
+async function closeOrHideLookWhileTypingTarget(context: ExtensionContext) {
+    if (lookWhileTypingCoverTarget) {
+        await hideLookWhileTypingTargetWithCover(context);
+        return;
+    }
+
+    const closeTargetKind = getLookWhileTypingCloseTargetKind(
+        Boolean(getLookWhileTypingTargetEditor()),
+        Boolean(getLookWhileTypingTargetTerminal())
+    );
+    if (closeTargetKind === 'terminal') {
+        await closeLookWhileTypingTerminal(context);
+    } else if (closeTargetKind === 'editor') {
+        await closeLookWhileTypingTarget(context);
+    }
+}
+
 async function reopenLookWhileTypingTarget(context: ExtensionContext) {
+    const hiddenTerminal = getHiddenLookWhileTypingTerminal();
+    if (hiddenTerminal) {
+        const transition = getLookWhileTypingRestoreTransition('terminal');
+        hiddenTerminal.show(true);
+        if (transition.activeTargetKind === 'terminal') {
+            lookWhileTypingTarget = undefined;
+            lookWhileTypingTerminal = hiddenTerminal;
+            lookWhileTypingTerminalName = hiddenTerminal.name;
+        }
+        clearHiddenLookWhileTypingTarget();
+        await persistLookWhileTypingTargets(context);
+        updateLookWhileTypingContext();
+        return;
+    }
+
+    const hiddenTarget = hiddenLookWhileTypingTarget;
+    if (hiddenTarget) {
+        try {
+            const hiddenTextEditor = await window.showTextDocument(
+                Uri.parse(hiddenTarget.documentUri),
+                {
+                    viewColumn: hiddenTarget.viewColumn,
+                    preserveFocus: true,
+                    preview: false,
+                }
+            );
+            const transition = getLookWhileTypingRestoreTransition('editor');
+            if (transition.activeTargetKind === 'editor') {
+                hiddenTarget.viewColumn = hiddenTextEditor.viewColumn;
+                lookWhileTypingTarget = hiddenTarget;
+                lookWhileTypingTerminal = undefined;
+                lookWhileTypingTerminalName = undefined;
+            }
+            clearHiddenLookWhileTypingTarget();
+            await persistLookWhileTypingTargets(context);
+            updateLookWhileTypingContext();
+            return;
+        } catch {
+            return window.showWarningMessage(
+                l10n.t('The hidden Look While Typing target could not be restored.')
+            );
+        }
+    }
+
     const target = lastClosedLookWhileTypingTarget;
     if (!target) {
         return window.showInformationMessage(l10n.t('No closed Look While Typing target to reopen.'));
@@ -573,32 +1010,52 @@ async function renameLookWhileTypingTarget(context: ExtensionContext) {
     await persistLookWhileTypingTargets(context);
 }
 
-async function handleLookWhileTypingInput(
+async function handleLookWhileTypingAction(
     context: ExtensionContext,
-    typedText: string
+    action: ReturnType<typeof getLookWhileTypingAction>
 ) {
-    const action = getLookWhileTypingAction(typedText, getLookWhileTypingControls());
     if (action === 'reopenTarget') {
         await reopenLookWhileTypingTarget(context);
         return true;
     }
-    if (!getLookWhileTypingTargetEditor()) {
+    const targetEditor = getLookWhileTypingTargetEditor();
+    const targetTerminal = getLookWhileTypingTargetTerminal();
+    if (!targetEditor && !targetTerminal) {
         return false;
     }
     if (action === 'scrollUp') {
-        scrollLookWhileTyping(-1);
+        await scrollLookWhileTypingTarget(-1);
         return true;
     }
     if (action === 'scrollDown') {
-        scrollLookWhileTyping(1);
+        await scrollLookWhileTypingTarget(1);
         return true;
     }
     if (action === 'closeTarget') {
-        await closeLookWhileTypingTarget(context);
+        await closeOrHideLookWhileTypingTarget(context);
         return true;
     }
 
     return false;
+}
+
+async function getUnhandledLookWhileTypingInput(
+    context: ExtensionContext,
+    typedText: string
+) {
+    let unhandledText = '';
+    const inputTokens = getLookWhileTypingInputTokens(
+        typedText,
+        getLookWhileTypingControls()
+    );
+
+    for (const { text, action } of inputTokens) {
+        if (!action || !await handleLookWhileTypingAction(context, action)) {
+            unhandledText += text;
+        }
+    }
+
+    return unhandledText;
 }
 
 function updateShadowContext() {
@@ -629,6 +1086,12 @@ function finishWriting(editorKey: string) {
 
 function clearShadowSession(editorKey: string) {
     shadowSessionMap.delete(editorKey);
+    shadowRoundRobinOrder = shadowRoundRobinOrder.filter((key) => key !== editorKey);
+    if (shadowRoundRobinOrder.length) {
+        shadowRoundRobinIndex %= shadowRoundRobinOrder.length;
+    } else {
+        shadowRoundRobinIndex = 0;
+    }
     finishWriting(editorKey);
     updateShadowContext();
     refreshInlineSuggestion();
@@ -639,33 +1102,102 @@ function clearAllShadowSessions() {
         finishWriting(editorKey);
     }
     shadowSessionMap.clear();
+    shadowRoundRobinOrder = [];
+    shadowRoundRobinIndex = 0;
     updateShadowContext();
     refreshInlineSuggestion();
 }
 
-function handleShadowSelectionChange(
-    textEditor: TextEditor,
-    selections: readonly Selection[],
-    isUserNavigation: boolean
-) {
-    const editorKey = getEditorKey(textEditor);
-    const shadowSession = shadowSessionMap.get(editorKey);
-    if (!shadowSession) {
+function getShadowInputTarget(sourceEditor: TextEditor) {
+    const sourceSession = shadowSessionMap.get(getEditorKey(sourceEditor));
+    if (!sourceSession || !canAdvanceShadowSession(sourceEditor, sourceSession)) {
+        return undefined;
+    }
+
+    const targetEditors = shadowRoundRobinOrder.map((editorKey) => {
+        return window.visibleTextEditors.find((textEditor) => {
+            return getEditorKey(textEditor) === editorKey;
+        });
+    });
+    const targetIndex = getNextRoundRobinIndex(
+        shadowRoundRobinOrder.map((editorKey, index) => {
+            const session = shadowSessionMap.get(editorKey);
+            const textEditor = targetEditors[index];
+            if (!session || !textEditor || !canAdvanceShadowSession(textEditor, session)) {
+                return false;
+            }
+            return getRewriteMode() === RewriteMode.Cycle
+                || session.index < session.beforeText.length;
+        }),
+        shadowRoundRobinIndex
+    );
+    if (targetIndex === undefined) {
+        return undefined;
+    }
+
+    const editorKey = shadowRoundRobinOrder[targetIndex];
+    const textEditor = targetEditors[targetIndex];
+    const session = shadowSessionMap.get(editorKey);
+    if (!textEditor || !session) {
+        return undefined;
+    }
+
+    shadowRoundRobinIndex = (targetIndex + 1) % shadowRoundRobinOrder.length;
+    if (session.index >= session.beforeText.length) {
+        restartShadowCycleAtAnchor(session);
+    }
+    return { editorKey, textEditor, session };
+}
+
+function completeShadowGroupIfNeeded() {
+    if (getRewriteMode() === RewriteMode.Cycle) {
         return;
     }
 
-    const cursors = selections.map(({ active }) => ({
-        line: active.line,
-        character: active.character,
-    }));
-    if (shouldAbandonShadowSessionAfterSelectionChange(
-        shadowSession,
-        cursors,
-        isUserNavigation
-    )) {
-        clearShadowSession(editorKey);
-         window.showInformationMessage(l10n.t('Shadow Rewriting stopped, cause by user moved input cursor. can be manual restart.'));
+    const isComplete = shadowRoundRobinOrder.length > 0
+        && shadowRoundRobinOrder.every((editorKey) => {
+            const session = shadowSessionMap.get(editorKey);
+            return !session || session.index >= session.beforeText.length;
+        });
+    if (isComplete) {
+        clearAllShadowSessions();
     }
+}
+
+function handleShadowSelectionChange(
+    textEditor: TextEditor,
+    _selections: readonly Selection[]
+) {
+    const editorKey = getEditorKey(textEditor);
+    if (!shadowSessionMap.has(editorKey)) {
+        return;
+    }
+
+    refreshInlineSuggestion();
+}
+
+function handleShadowDocumentChange(
+    document: TextDocument,
+    contentChanges: readonly {
+        rangeOffset: number;
+        rangeLength: number;
+        text: string;
+    }[]
+) {
+    const editorKey = document.uri.toString();
+    const session = shadowSessionMap.get(editorKey);
+    if (!session || shadowProgrammaticEditKeys.has(editorKey)) {
+        return;
+    }
+
+    session.anchorOffset = transformShadowAnchorOffset(
+        session.anchorOffset,
+        contentChanges
+    );
+    const anchor = document.positionAt(session.anchorOffset);
+    session.line = anchor.line;
+    session.character = anchor.character;
+    refreshInlineSuggestion();
 }
 
 function showPauseinfo(textEditor: TextEditor) {
@@ -694,7 +1226,11 @@ function getSelectionRangeByStartAndEnd({
     return selectionRange;
 }
 
-function createRewriteSession(textEditor: TextEditor, selectionRange: Range) {
+function createRewriteSession(
+    textEditor: TextEditor,
+    selectionRange: Range
+): RewriteSession {
+    const anchorOffset = textEditor.document.offsetAt(selectionRange.start);
     return {
         beforeText: textEditor.document.getText(selectionRange),
         index: 0,
@@ -702,7 +1238,21 @@ function createRewriteSession(textEditor: TextEditor, selectionRange: Range) {
         character: selectionRange.start.character,
         initLine: selectionRange.start.line,
         initCharacter: selectionRange.start.character,
+        anchorOffset,
+        initAnchorOffset: anchorOffset,
     };
+}
+
+function initializeHumanRewritePlan(session: RewriteSession) {
+    session.humanActions = createHumanRewritePlan(session.beforeText);
+    session.humanActionIndex = 0;
+}
+
+function getCurrentHumanRewriteAction(session: RewriteSession) {
+    if (!session.humanActions) {
+        initializeHumanRewritePlan(session);
+    }
+    return session.humanActions?.[session.humanActionIndex ?? 0];
 }
 
 function getWrittenRange(session: RewriteSession) {
@@ -716,27 +1266,57 @@ function getSessionPosition(session: RewriteSession) {
     return new Position(session.line, session.character);
 }
 
-function getSessionStartPosition(session: RewriteSession) {
-    return new Position(session.initLine, session.initCharacter);
-}
-
 function setEditorCursor(textEditor: TextEditor, position: Position) {
     textEditor.selection = new Selection(position, position);
 }
 
+function runShadowAwareEdit(
+    textEditor: TextEditor,
+    callback: (editBuilder: TextEditorEdit) => void
+) {
+    const editorKey = getEditorKey(textEditor);
+    const hasShadowSession = shadowSessionMap.has(editorKey);
+    if (hasShadowSession) {
+        shadowProgrammaticEditKeys.add(editorKey);
+    }
+
+    return textEditor.edit(callback).then((isEdited) => {
+        if (hasShadowSession) {
+            shadowProgrammaticEditKeys.delete(editorKey);
+        }
+        return isEdited;
+    }, (reason) => {
+        if (hasShadowSession) {
+            shadowProgrammaticEditKeys.delete(editorKey);
+        }
+        throw reason;
+    });
+}
+
 function resetRewriteSession(textEditor: TextEditor, session: RewriteSession) {
     const writtenRange = getWrittenRange(session);
-    return textEditor.edit((editBuilder) => {
+    return runShadowAwareEdit(textEditor, (editBuilder) => {
         editBuilder.delete(writtenRange);
     }).then((isEdited) => {
         if (isEdited) {
             session.index = 0;
             session.line = session.initLine;
             session.character = session.initCharacter;
+            session.anchorOffset = session.initAnchorOffset;
+            if (session.humanActions) {
+                initializeHumanRewritePlan(session);
+            }
             setEditorCursor(textEditor, getSessionPosition(session));
         }
         return isEdited;
     });
+}
+
+function restartShadowCycleAtAnchor(session: RewriteSession) {
+    session.index = 0;
+    session.initLine = session.line;
+    session.initCharacter = session.character;
+    session.initAnchorOffset = session.anchorOffset;
 }
 
 function revealCurrentPosition(textEditor: TextEditor, session: RewriteSession) {
@@ -748,17 +1328,23 @@ function revealCurrentPosition(textEditor: TextEditor, session: RewriteSession) 
     return nowPosition;
 }
 
-function writeNextTargetChunk(textEditor: TextEditor, session: RewriteSession) {
+function writeNextTargetChunk(
+    textEditor: TextEditor,
+    session: RewriteSession,
+    requestedTargetText?: string
+) {
     const nowPosition = revealCurrentPosition(textEditor, session);
-    let targetText = session.beforeText[session.index];
+    let targetText = requestedTargetText ?? session.beforeText[session.index];
 
-    if (session.beforeText.startsWith('\r\n', session.index)) {
+    if (requestedTargetText === undefined
+        && session.beforeText.startsWith('\r\n', session.index)) {
         targetText = '\r\n';
-    } else if (session.beforeText.startsWith('\n', session.index)) {
+    } else if (requestedTargetText === undefined
+        && session.beforeText.startsWith('\n', session.index)) {
         targetText = '\n';
     }
 
-    return textEditor.edit((editBuilder) => {
+    return runShadowAwareEdit(textEditor, (editBuilder) => {
         editBuilder.insert(nowPosition, targetText);
     }).then((isEdited) => {
         if (commitShadowSessionEdit(session, targetText, isEdited)) {
@@ -772,39 +1358,10 @@ function isSymbolCharacter(text: string) {
     return text.length > 0 && !/^[\p{L}\p{N}_\s]$/u.test(text);
 }
 
-function getExpectedShadowPrefix(session: RewriteSession) {
-    return session.beforeText.slice(0, session.index);
-}
-
 function getCurrentShadowLineIndentationRemainder(session: RewriteSession) {
     const currentLineRemainder = getCurrentShadowLineRemainder(session);
     const indentationMatch = currentLineRemainder.match(/^[\t ]+/);
     return indentationMatch ? indentationMatch[0] : '';
-}
-
-function getShadowCursorOffset(textEditor: TextEditor, session: RewriteSession) {
-    return textEditor.document.offsetAt(getSessionPosition(session));
-}
-
-function getActualShadowPrefix(textEditor: TextEditor, session: RewriteSession) {
-    const startPosition = getSessionStartPosition(session);
-    const actualPosition = textEditor.selection.active;
-
-    if (textEditor.document.offsetAt(actualPosition) < textEditor.document.offsetAt(startPosition)) {
-        return '';
-    }
-
-    return textEditor.document.getText(new Range(startPosition, actualPosition));
-}
-
-function getActualShadowPrefixAtSessionPosition(
-    textEditor: TextEditor,
-    session: RewriteSession
-) {
-    return textEditor.document.getText(new Range(
-        getSessionStartPosition(session),
-        getSessionPosition(session)
-    ));
 }
 
 function isExpectingLineBreak(session: RewriteSession) {
@@ -839,53 +1396,12 @@ function requiresManualIndentation(textEditor: TextEditor, session: RewriteSessi
     return getCurrentLineIndentUnit(textEditor, session).length > 0;
 }
 
-function hasShadowOverflow(textEditor: TextEditor, session: RewriteSession) {
-    const expectedPrefix = getExpectedShadowPrefix(session);
-    const actualPrefix = getActualShadowPrefix(textEditor, session);
-    return actualPrefix.startsWith(expectedPrefix) && actualPrefix.length > expectedPrefix.length;
-}
-
-function isShadowPrefixAligned(textEditor: TextEditor, session: RewriteSession) {
-    return isTargetPrefixAligned(session, getActualShadowPrefix(textEditor, session));
-}
-
 function canAdvanceShadowSession(textEditor: TextEditor, session: RewriteSession) {
-    return isShadowPrefixAligned(textEditor, session)
-        && textEditor.document.offsetAt(textEditor.selection.active) === getShadowCursorOffset(textEditor, session);
-}
-
-function shouldAbandonShadowSessionAfterExternalEdit(
-    textEditor: TextEditor,
-    session: RewriteSession
-) {
-    return shouldAbandonShadowSession(
-        session,
-        getActualShadowPrefix(textEditor, session),
-        textEditor.document.offsetAt(textEditor.selection.active) === getShadowCursorOffset(
-            textEditor,
-            session
-        )
-    );
-}
-
-function deleteShadowOverflow(textEditor: TextEditor, session: RewriteSession) {
-    const expectedOffset = textEditor.document.offsetAt(getSessionPosition(session));
-    const actualPosition = textEditor.selection.active;
-    const actualOffset = textEditor.document.offsetAt(actualPosition);
-
-    if (actualOffset <= expectedOffset) {
-        return false;
-    }
-
-    const startPosition = textEditor.document.positionAt(actualOffset - 1);
-    return textEditor.edit((editBuilder) => {
-        editBuilder.delete(new Range(startPosition, actualPosition));
-    }).then((isEdited) => {
-        if (isEdited) {
-            setEditorCursor(textEditor, startPosition);
-        }
-        return isEdited;
-    });
+    const cursors = textEditor.selections.map(({ active }) => ({
+        line: active.line,
+        character: active.character,
+    }));
+    return shouldUseShadowInput(session, cursors);
 }
 
 function insertTargetText(textEditor: TextEditor, session: RewriteSession, targetText: string) {
@@ -894,7 +1410,7 @@ function insertTargetText(textEditor: TextEditor, session: RewriteSession, targe
     }
 
     const nowPosition = revealCurrentPosition(textEditor, session);
-    return textEditor.edit((editBuilder) => {
+    return runShadowAwareEdit(textEditor, (editBuilder) => {
         editBuilder.insert(nowPosition, targetText);
     }).then((isEdited) => {
         if (commitShadowSessionEdit(session, targetText, isEdited)) {
@@ -923,22 +1439,6 @@ function canShadowTypeAdvance(typedText: string, session: RewriteSession) {
     }
 
     return [...typedText].some((character) => isSymbolCharacter(character));
-}
-
-function showShadowOutOfSyncMessage(textEditor: TextEditor, session: RewriteSession) {
-    if (hasShadowOverflow(textEditor, session)) {
-        return window.showWarningMessage(
-            l10n.t(
-                'Shadow Rewriting detected extra characters. Press Backspace to clean them before continuing.'
-            )
-        );
-    }
-
-    return window.showWarningMessage(
-        l10n.t(
-            'Shadow Rewriting is out of sync with the target text. Stop and restart this session if needed.'
-        )
-    );
 }
 
 function canUseGenericShadowTyping(textEditor: TextEditor, session: RewriteSession) {
@@ -975,16 +1475,9 @@ async function advanceShadowWithTypedInput(
     refreshInlineSuggestion();
 }
 
-function completeShadowSessionIfNeeded(editorKey: string, shadowSession: RewriteSession) {
-    if (shadowSession.index >= shadowSession.beforeText.length
-        && getRewriteMode() === RewriteMode.Once) {
-        clearShadowSession(editorKey);
-    }
-}
-
 async function handleShadowLineBreak(textEditor: TextEditor, shadowSession: RewriteSession) {
     if (!canAdvanceShadowSession(textEditor, shadowSession)) {
-        return showShadowOutOfSyncMessage(textEditor, shadowSession);
+        return;
     }
 
     if (!isExpectingLineBreak(shadowSession)) {
@@ -1001,7 +1494,7 @@ async function handleShadowLineBreak(textEditor: TextEditor, shadowSession: Rewr
 
 async function handleShadowIndentation(textEditor: TextEditor, shadowSession: RewriteSession) {
     if (!canAdvanceShadowSession(textEditor, shadowSession)) {
-        return showShadowOutOfSyncMessage(textEditor, shadowSession);
+        return;
     }
 
     const indentUnit = getCurrentLineIndentUnit(textEditor, shadowSession);
@@ -1031,6 +1524,7 @@ function rewriteCodeWithStartAndEnd({
         textEditor,
     });
     const session = createRewriteSession(textEditor, selectionRange);
+    initializeHumanRewritePlan(session);
 
     edit.delete(selectionRange);
 
@@ -1039,7 +1533,7 @@ function rewriteCodeWithStartAndEnd({
         finishWriting(editorKey);
     };
 
-    const runWrite = function() {
+    const runWrite = function(delay: number) {
         const inputTimeout: NodeJS.Timeout = setTimeout(() => {
             if (!shouldContinueRewrite(
                 isWritingCodeMap.get(editorKey),
@@ -1050,7 +1544,7 @@ function rewriteCodeWithStartAndEnd({
 
             if (isWriteCodePauseMap.get(editorKey)) {
                 return textEditor.edit(() => undefined)
-                    .then(() => runWrite(), (reason) => {
+                    .then(() => runWrite(delay), (reason) => {
                         recycleWrite(inputTimeout);
                         throw new Error(String(reason));
                     });
@@ -1059,7 +1553,10 @@ function rewriteCodeWithStartAndEnd({
             if (session.index >= session.beforeText.length) {
                 if (getRewriteMode() === RewriteMode.Cycle) {
                     return resetRewriteSession(textEditor, session)
-                        .then(() => runWrite(), (reason) => {
+                        .then(() => {
+                            const firstAction = getCurrentHumanRewriteAction(session);
+                            runWrite(firstAction?.delayAfter ?? 250);
+                        }, (reason) => {
                             recycleWrite(inputTimeout);
                             throw new Error(String(reason));
                         });
@@ -1068,15 +1565,128 @@ function rewriteCodeWithStartAndEnd({
                 return recycleWrite(inputTimeout);
             }
 
-            writeNextTargetChunk(textEditor, session)
-                .then(() => runWrite(), (reason) => {
+            const action = getCurrentHumanRewriteAction(session);
+            if (!action) {
+                return recycleWrite(inputTimeout);
+            }
+            writeNextTargetChunk(textEditor, session, action.text)
+                .then((isEdited) => {
+                    if (isEdited) {
+                        session.humanActionIndex = (session.humanActionIndex ?? 0) + 1;
+                    }
+                    runWrite(action.delayAfter);
+                }, (reason) => {
                     recycleWrite(inputTimeout);
                     throw new Error(String(reason));
                 });
-        }, getReWriteSpeed());
+        }, delay);
     };
 
-    runWrite();
+    const firstAction = getCurrentHumanRewriteAction(session);
+    runWrite(firstAction?.delayAfter ?? 250);
+}
+
+async function rewriteCodeAcrossEditors(textEditors: readonly TextEditor[]) {
+    const targets: EditorRewriteTarget[] = textEditors.map((textEditor) => {
+        const selectionRange = new Range(
+            textEditor.selection.start,
+            textEditor.selection.end
+        );
+        return {
+            textEditor,
+            session: createRewriteSession(textEditor, selectionRange),
+        };
+    });
+    for (const target of targets) {
+        initializeHumanRewritePlan(target.session);
+    }
+
+    if (targets.some(({ textEditor }) => isWritingCodeMap.get(getEditorKey(textEditor)))) {
+        return window.showInformationMessage(l10n.t('Code rewriting is already in progress.'));
+    }
+
+    const preparedTargets: EditorRewriteTarget[] = [];
+    for (const target of targets) {
+        const editorKey = getEditorKey(target.textEditor);
+        isWritingCodeMap.set(editorKey, true);
+        isWriteCodePauseMap.set(editorKey, false);
+        const isDeleted = await target.textEditor.edit((editBuilder) => {
+            editBuilder.delete(new Range(
+                target.textEditor.selection.start,
+                target.textEditor.selection.end
+            ));
+        });
+        if (!isDeleted) {
+            finishWriting(editorKey);
+            continue;
+        }
+        setEditorCursor(target.textEditor, getSessionPosition(target.session));
+        preparedTargets.push(target);
+    }
+
+    let nextTargetIndex = 0;
+    const runWrite = (delay: number) => {
+        setTimeout(async () => {
+            for (const target of preparedTargets) {
+                const editorKey = getEditorKey(target.textEditor);
+                if (target.textEditor.document.isClosed) {
+                    finishWriting(editorKey);
+                } else if (target.session.index >= target.session.beforeText.length
+                    && getRewriteMode() === RewriteMode.Once) {
+                    finishWriting(editorKey);
+                }
+            }
+
+            const targetIndex = getNextRoundRobinIndex(
+                preparedTargets.map(({ textEditor }) => {
+                    const editorKey = getEditorKey(textEditor);
+                    return isWritingCodeMap.get(editorKey) === true
+                        && !isWriteCodePauseMap.get(editorKey);
+                }),
+                nextTargetIndex
+            );
+            if (targetIndex === undefined) {
+                if (preparedTargets.some(({ textEditor }) => {
+                    return isWritingCodeMap.get(getEditorKey(textEditor)) === true;
+                })) {
+                    runWrite(250);
+                }
+                return;
+            }
+
+            const target = preparedTargets[targetIndex];
+            nextTargetIndex = (targetIndex + 1) % preparedTargets.length;
+            if (target.session.index >= target.session.beforeText.length) {
+                const isReset = await resetRewriteSession(target.textEditor, target.session);
+                if (!isReset) {
+                    finishWriting(getEditorKey(target.textEditor));
+                    runWrite(250);
+                    return;
+                }
+            }
+
+            const action = getCurrentHumanRewriteAction(target.session);
+            if (!action) {
+                finishWriting(getEditorKey(target.textEditor));
+                runWrite(250);
+                return;
+            }
+            const isEdited = await writeNextTargetChunk(
+                target.textEditor,
+                target.session,
+                action.text
+            );
+            if (isEdited) {
+                target.session.humanActionIndex = (target.session.humanActionIndex ?? 0) + 1;
+            }
+            runWrite(action.delayAfter);
+        }, delay);
+    };
+
+    const firstAction = preparedTargets.length
+        ? getCurrentHumanRewriteAction(preparedTargets[0].session)
+        : undefined;
+    runWrite(firstAction?.delayAfter ?? 250);
 }
 
 function rewriteCode(
@@ -1084,6 +1694,12 @@ function rewriteCode(
     edit: TextEditorEdit,
     _args: any[]
 ) {
+    const selectedEditors = getSelectedRewriteEditors(textEditor);
+    if (selectedEditors.length > 1) {
+        void rewriteCodeAcrossEditors(selectedEditors);
+        return;
+    }
+
     const editorKey = getEditorKey(textEditor);
     if (isWritingCodeMap.get(editorKey)) {
         return window.showInformationMessage(l10n.t('Code rewriting is already in progress.'));
@@ -1102,6 +1718,12 @@ function shadowRewriteCode(
     edit: TextEditorEdit,
     _args: any[]
 ) {
+    const selectedEditors = getSelectedRewriteEditors(textEditor);
+    if (selectedEditors.length > 1) {
+        void shadowRewriteCodeAcrossEditors(selectedEditors);
+        return;
+    }
+
     const editorKey = getEditorKey(textEditor);
     if (isWritingCodeMap.get(editorKey)) {
         return window.showInformationMessage(l10n.t('Code rewriting is already in progress.'));
@@ -1120,11 +1742,60 @@ function shadowRewriteCode(
 
     edit.delete(selectionRange);
     shadowSessionMap.set(editorKey, session);
+    shadowRoundRobinOrder = [editorKey];
+    shadowRoundRobinIndex = 0;
     isWritingCodeMap.set(editorKey, true);
     isWriteCodePauseMap.set(editorKey, false);
     updateShadowContext();
     refreshInlineSuggestion();
     window.showInformationMessage(l10n.t('Shadow Rewriting started. Press Esc to exit.'));
+}
+
+async function shadowRewriteCodeAcrossEditors(textEditors: readonly TextEditor[]) {
+    const targets = textEditors.map((textEditor) => {
+        const selectionRange = new Range(
+            textEditor.selection.start,
+            textEditor.selection.end
+        );
+        return {
+            textEditor,
+            selectionRange,
+            session: createRewriteSession(textEditor, selectionRange),
+        };
+    }).filter(({ session }) => session.beforeText.length > 0);
+
+    if (!targets.length) {
+        return window.showInformationMessage(l10n.t('No code available for Shadow Rewriting.'));
+    }
+    if (targets.some(({ textEditor }) => isWritingCodeMap.get(getEditorKey(textEditor)))) {
+        return window.showInformationMessage(l10n.t('Code rewriting is already in progress.'));
+    }
+
+    const preparedKeys: string[] = [];
+    for (const target of targets) {
+        const isDeleted = await target.textEditor.edit((editBuilder) => {
+            editBuilder.delete(target.selectionRange);
+        });
+        if (!isDeleted) {
+            continue;
+        }
+
+        const editorKey = getEditorKey(target.textEditor);
+        shadowSessionMap.set(editorKey, target.session);
+        isWritingCodeMap.set(editorKey, true);
+        isWriteCodePauseMap.set(editorKey, false);
+        setEditorCursor(target.textEditor, getSessionPosition(target.session));
+        preparedKeys.push(editorKey);
+    }
+
+    shadowRoundRobinOrder = preparedKeys;
+    shadowRoundRobinIndex = 0;
+    updateShadowContext();
+    refreshInlineSuggestion();
+    window.showInformationMessage(l10n.t(
+        'Shadow Rewriting started across {0} editors. Press Esc to exit.',
+        preparedKeys.length
+    ));
 }
 
 function exitShadowRewrite() {
@@ -1138,7 +1809,11 @@ function exitShadowRewrite() {
         return;
     }
 
-    clearShadowSession(editorKey);
+    if (shadowRoundRobinOrder.length > 1) {
+        clearAllShadowSessions();
+    } else {
+        clearShadowSession(editorKey);
+    }
     window.showInformationMessage(l10n.t('Shadow Rewriting stopped.'));
 }
 
@@ -1163,7 +1838,15 @@ function pauseWriteCode(
             l10n.t('Code rewriting is not active, so it cannot be paused.')
         );
     }
-    isWriteCodePauseMap.set(editorKey, !isWriteCodePauseMap.get(editorKey));
+    const isPaused = !isWriteCodePauseMap.get(editorKey);
+    if (shadowRoundRobinOrder.length > 1
+        && shadowRoundRobinOrder.includes(editorKey)) {
+        for (const targetKey of shadowRoundRobinOrder) {
+            isWriteCodePauseMap.set(targetKey, isPaused);
+        }
+    } else {
+        isWriteCodePauseMap.set(editorKey, isPaused);
+    }
     showPauseinfo(textEditor);
 }
 
@@ -1191,26 +1874,29 @@ async function handleShadowType(
         return commands.executeCommand(DEFAULT_TYPE_COMMAND, args);
     }
 
-    const typedText = typeof args.text === 'string' ? args.text : '';
+    let typedText = typeof args.text === 'string' ? args.text : '';
     if (!typedText) {
         return;
     }
 
-    if (await handleLookWhileTypingInput(context, typedText)) {
+    typedText = await getUnhandledLookWhileTypingInput(context, typedText);
+    if (!typedText) {
         return;
     }
+    const unhandledArgs = { ...args, text: typedText };
 
     const editorKey = getEditorKey(textEditor);
-    const shadowSession = shadowSessionMap.get(editorKey);
+    const sourceSession = shadowSessionMap.get(editorKey);
 
-    if (!shadowSession || isWriteCodePauseMap.get(editorKey)) {
-        return commands.executeCommand(DEFAULT_TYPE_COMMAND, args);
+    if (!sourceSession || isWriteCodePauseMap.get(editorKey)) {
+        return commands.executeCommand(DEFAULT_TYPE_COMMAND, unhandledArgs);
     }
 
-    return shadowInputQueue.enqueue(editorKey, async () => {
-        if (shadowSessionMap.get(editorKey) !== shadowSession
+    const queueKey = shadowRoundRobinOrder.length > 1 ? 'shadow:multi' : editorKey;
+    return shadowInputQueue.enqueue(queueKey, async () => {
+        if (shadowSessionMap.get(editorKey) !== sourceSession
             || isWriteCodePauseMap.get(editorKey)) {
-            return;
+            return commands.executeCommand(DEFAULT_TYPE_COMMAND, unhandledArgs);
         }
 
         if (textEditor.document.isClosed) {
@@ -1218,36 +1904,29 @@ async function handleShadowType(
             return;
         }
 
-        if (shouldAbandonShadowSessionAfterExternalEdit(textEditor, shadowSession)) {
-            clearShadowSession(editorKey);
-            return commands.executeCommand(DEFAULT_TYPE_COMMAND, args);
+        if (!canAdvanceShadowSession(textEditor, sourceSession)) {
+            return commands.executeCommand(DEFAULT_TYPE_COMMAND, unhandledArgs);
         }
 
         const typedCharacters = getShadowInputCharacters(typedText);
         for (let index = 0; index < typedCharacters.length; index += 1) {
-            if (shadowSessionMap.get(editorKey) !== shadowSession) {
-                return;
+            if (!shadowSessionMap.has(editorKey)) {
+                const remainingText = typedCharacters.slice(index).join('');
+                return commands.executeCommand(DEFAULT_TYPE_COMMAND, { text: remainingText });
             }
 
-            if (shadowSession.index >= shadowSession.beforeText.length) {
-                if (getRewriteMode() === RewriteMode.Cycle) {
-                    const isReset = await resetRewriteSession(textEditor, shadowSession);
-                    if (!isReset) {
-                        return;
-                    }
-                } else {
-                    clearShadowSession(editorKey);
-                    const remainingText = typedCharacters.slice(index).join('');
-                    return commands.executeCommand(DEFAULT_TYPE_COMMAND, { text: remainingText });
-                }
+            const target = getShadowInputTarget(textEditor);
+            if (!target) {
+                completeShadowGroupIfNeeded();
+                const remainingText = typedCharacters.slice(index).join('');
+                return commands.executeCommand(DEFAULT_TYPE_COMMAND, { text: remainingText });
             }
-
             await advanceShadowWithTypedInput(
-                textEditor,
-                shadowSession,
+                target.textEditor,
+                target.session,
                 typedCharacters[index]
             );
-            completeShadowSessionIfNeeded(editorKey, shadowSession);
+            completeShadowGroupIfNeeded();
         }
     });
 }
@@ -1264,22 +1943,18 @@ async function handleShadowDeleteLeft() {
         return commands.executeCommand(DEFAULT_DELETE_LEFT_COMMAND);
     }
 
-    return shadowInputQueue.enqueue(editorKey, async () => {
+    const queueKey = shadowRoundRobinOrder.length > 1 ? 'shadow:multi' : editorKey;
+    return shadowInputQueue.enqueue(queueKey, async () => {
         if (shadowSessionMap.get(editorKey) !== shadowSession) {
-            return;
-        }
-
-        if (shouldAbandonShadowSessionAfterExternalEdit(textEditor, shadowSession)) {
-            clearShadowSession(editorKey);
             return commands.executeCommand(DEFAULT_DELETE_LEFT_COMMAND);
         }
 
-        if (!hasShadowOverflow(textEditor, shadowSession)) {
-            return;
+        if (!canAdvanceShadowSession(textEditor, shadowSession)) {
+            return commands.executeCommand(DEFAULT_DELETE_LEFT_COMMAND);
         }
 
-        await deleteShadowOverflow(textEditor, shadowSession);
-        refreshInlineSuggestion();
+        // Keep completed target text intact while the cursor is at the active anchor.
+        return;
     });
 }
 
@@ -1290,29 +1965,35 @@ async function handleShadowEnter() {
     }
 
     const editorKey = getEditorKey(textEditor);
-    const shadowSession = shadowSessionMap.get(editorKey);
-    if (!shadowSession) {
+    const sourceSession = shadowSessionMap.get(editorKey);
+    if (!sourceSession) {
         return commands.executeCommand(DEFAULT_TYPE_COMMAND, { text: '\n' });
     }
 
-    return shadowInputQueue.enqueue(editorKey, async () => {
-        if (shadowSessionMap.get(editorKey) !== shadowSession) {
+    const queueKey = shadowRoundRobinOrder.length > 1 ? 'shadow:multi' : editorKey;
+    return shadowInputQueue.enqueue(queueKey, async () => {
+        if (shadowSessionMap.get(editorKey) !== sourceSession) {
             return commands.executeCommand(DEFAULT_TYPE_COMMAND, { text: '\n' });
         }
 
-        if (!canAdvanceShadowSession(textEditor, shadowSession)) {
-            clearShadowSession(editorKey);
+        if (!canAdvanceShadowSession(textEditor, sourceSession)) {
+            return commands.executeCommand(DEFAULT_TYPE_COMMAND, { text: '\n' });
+        }
+
+        const target = getShadowInputTarget(textEditor);
+        if (!target) {
+            completeShadowGroupIfNeeded();
             return commands.executeCommand(DEFAULT_TYPE_COMMAND, { text: '\n' });
         }
 
         if (!getShadowRequireManualLineBreaksAndIndentation()) {
-            await advanceShadowWithTypedInput(textEditor, shadowSession, '\n');
-            completeShadowSessionIfNeeded(editorKey, shadowSession);
+            await advanceShadowWithTypedInput(target.textEditor, target.session, '\n');
+            completeShadowGroupIfNeeded();
             return;
         }
 
-        await handleShadowLineBreak(textEditor, shadowSession);
-        completeShadowSessionIfNeeded(editorKey, shadowSession);
+        await handleShadowLineBreak(target.textEditor, target.session);
+        completeShadowGroupIfNeeded();
     });
 }
 
@@ -1323,29 +2004,35 @@ async function handleShadowTab() {
     }
 
     const editorKey = getEditorKey(textEditor);
-    const shadowSession = shadowSessionMap.get(editorKey);
-    if (!shadowSession) {
+    const sourceSession = shadowSessionMap.get(editorKey);
+    if (!sourceSession) {
         return commands.executeCommand(DEFAULT_TAB_COMMAND);
     }
 
-    return shadowInputQueue.enqueue(editorKey, async () => {
-        if (shadowSessionMap.get(editorKey) !== shadowSession) {
+    const queueKey = shadowRoundRobinOrder.length > 1 ? 'shadow:multi' : editorKey;
+    return shadowInputQueue.enqueue(queueKey, async () => {
+        if (shadowSessionMap.get(editorKey) !== sourceSession) {
             return commands.executeCommand(DEFAULT_TAB_COMMAND);
         }
 
-        if (!canAdvanceShadowSession(textEditor, shadowSession)) {
-            clearShadowSession(editorKey);
+        if (!canAdvanceShadowSession(textEditor, sourceSession)) {
+            return commands.executeCommand(DEFAULT_TAB_COMMAND);
+        }
+
+        const target = getShadowInputTarget(textEditor);
+        if (!target) {
+            completeShadowGroupIfNeeded();
             return commands.executeCommand(DEFAULT_TAB_COMMAND);
         }
 
         if (!getShadowRequireManualLineBreaksAndIndentation()) {
-            await advanceShadowWithTypedInput(textEditor, shadowSession, '\t');
-            completeShadowSessionIfNeeded(editorKey, shadowSession);
+            await advanceShadowWithTypedInput(target.textEditor, target.session, '\t');
+            completeShadowGroupIfNeeded();
             return;
         }
 
-        await handleShadowIndentation(textEditor, shadowSession);
-        completeShadowSessionIfNeeded(editorKey, shadowSession);
+        await handleShadowIndentation(target.textEditor, target.session);
+        completeShadowGroupIfNeeded();
     });
 }
 
@@ -1367,11 +2054,6 @@ const shadowInlineCompletionProvider: InlineCompletionItemProvider = {
 
         const shadowSession = shadowSessionMap.get(getEditorKey(textEditor));
         if (!shadowSession || isWriteCodePauseMap.get(getEditorKey(textEditor))) {
-            return [];
-        }
-
-        const actualPrefix = getActualShadowPrefixAtSessionPosition(textEditor, shadowSession);
-        if (!isTargetPrefixAligned(shadowSession, actualPrefix)) {
             return [];
         }
 
@@ -1431,19 +2113,52 @@ export function activate(context: ExtensionContext) {
     lastClosedLookWhileTypingTarget = context.workspaceState.get<LookWhileTypingTarget>(
         LOOK_WHILE_TYPING_CLOSED_TARGET_STATE_KEY
     );
+    lookWhileTypingTerminalName = context.workspaceState.get<string>(
+        LOOK_WHILE_TYPING_TERMINAL_STATE_KEY
+    );
+    lookWhileTypingTerminal = window.terminals.find((terminal) => {
+        return terminal.name === lookWhileTypingTerminalName;
+    });
+    lookWhileTypingCoverTarget = context.workspaceState.get<LookWhileTypingTarget>(
+        LOOK_WHILE_TYPING_COVER_TARGET_STATE_KEY
+    );
+    hiddenLookWhileTypingTarget = context.workspaceState.get<LookWhileTypingTarget>(
+        LOOK_WHILE_TYPING_HIDDEN_TARGET_STATE_KEY
+    );
+    hiddenLookWhileTypingTerminalName = context.workspaceState.get<string>(
+        LOOK_WHILE_TYPING_HIDDEN_TERMINAL_STATE_KEY
+    );
+    hiddenLookWhileTypingTerminal = window.terminals.find((terminal) => {
+        return terminal.name === hiddenLookWhileTypingTerminalName;
+    });
     updateShadowContext();
     updateLookWhileTypingContext();
 
     context.subscriptions.push(
         registerShadowInlineCompletionProvider(),
         window.onDidChangeVisibleTextEditors(updateLookWhileTypingContext),
-        window.onDidChangeTextEditorSelection(({ textEditor, selections, kind }) => {
-            handleShadowSelectionChange(
-                textEditor,
-                selections,
-                kind === TextEditorSelectionChangeKind.Keyboard
-                    || kind === TextEditorSelectionChangeKind.Mouse
-            );
+        window.onDidOpenTerminal(updateLookWhileTypingContext),
+        window.onDidCloseTerminal((terminal) => {
+            let hasChanged = false;
+            if (terminal === lookWhileTypingTerminal) {
+                lookWhileTypingTerminal = undefined;
+                lookWhileTypingTerminalName = undefined;
+                hasChanged = true;
+            }
+            if (terminal === hiddenLookWhileTypingTerminal) {
+                clearHiddenLookWhileTypingTarget();
+                hasChanged = true;
+            }
+            if (hasChanged) {
+                void persistLookWhileTypingTargets(context);
+            }
+            updateLookWhileTypingContext();
+        }),
+        window.onDidChangeTextEditorSelection(({ textEditor, selections }) => {
+            handleShadowSelectionChange(textEditor, selections);
+        }),
+        workspace.onDidChangeTextDocument(({ document, contentChanges }) => {
+            handleShadowDocumentChange(document, contentChanges);
         }),
         workspace.onDidRenameFiles(({ files }) => {
             void updateLookWhileTypingTargetAfterWorkspaceRename(context, files);
@@ -1457,20 +2172,24 @@ export function activate(context: ExtensionContext) {
             () => selectLookWhileTypingTarget(context)
         ),
         commands.registerCommand(
+            LOOK_WHILE_TYPING_SELECT_COVER_COMMAND,
+            () => selectLookWhileTypingCoverEditor(context)
+        ),
+        commands.registerCommand(
             LOOK_WHILE_TYPING_CLEAR_TARGET_COMMAND,
             () => clearLookWhileTypingTarget(context)
         ),
         commands.registerCommand(
             LOOK_WHILE_TYPING_SCROLL_UP_COMMAND,
-            () => scrollLookWhileTyping(-1)
+            () => scrollLookWhileTypingTarget(-1)
         ),
         commands.registerCommand(
             LOOK_WHILE_TYPING_SCROLL_DOWN_COMMAND,
-            () => scrollLookWhileTyping(1)
+            () => scrollLookWhileTypingTarget(1)
         ),
         commands.registerCommand(
             LOOK_WHILE_TYPING_CLOSE_TARGET_COMMAND,
-            () => closeLookWhileTypingTarget(context)
+            () => closeOrHideLookWhileTypingTarget(context)
         ),
         commands.registerCommand(
             LOOK_WHILE_TYPING_REOPEN_TARGET_COMMAND,

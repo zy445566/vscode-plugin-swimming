@@ -3,11 +3,18 @@ export type ShadowInlineSession = {
     index: number;
     line: number;
     character: number;
+    anchorOffset?: number;
 };
 
 export type ShadowCursor = {
     line: number;
     character: number;
+};
+
+export type ShadowContentChange = {
+    rangeOffset: number;
+    rangeLength: number;
+    text: string;
 };
 
 export type ShadowGenericTypingPolicy = {
@@ -40,6 +47,9 @@ export function advanceShadowSession(
     insertedText: string
 ) {
     session.index += insertedText.length;
+    if (typeof session.anchorOffset === 'number') {
+        session.anchorOffset += insertedText.length;
+    }
 
     const insertedLines = insertedText.split(/\r?\n/);
     if (insertedLines.length === 1) {
@@ -49,6 +59,41 @@ export function advanceShadowSession(
 
     session.line += insertedLines.length - 1;
     session.character = insertedLines[insertedLines.length - 1].length;
+}
+
+export function shouldUseShadowInput(
+    session: ShadowInlineSession,
+    cursors: readonly ShadowCursor[]
+) {
+    return cursors.length === 1
+        && cursors[0].line === session.line
+        && cursors[0].character === session.character;
+}
+
+export function transformShadowAnchorOffset(
+    anchorOffset: number,
+    changes: readonly ShadowContentChange[]
+) {
+    let offsetDelta = 0;
+    const orderedChanges = [...changes].sort((left, right) => {
+        return left.rangeOffset - right.rangeOffset;
+    });
+
+    for (const change of orderedChanges) {
+        const rangeEnd = change.rangeOffset + change.rangeLength;
+        const isBeforeAnchor = rangeEnd < anchorOffset
+            || (rangeEnd === anchorOffset && change.rangeOffset < anchorOffset);
+        if (isBeforeAnchor) {
+            offsetDelta += change.text.length - change.rangeLength;
+            continue;
+        }
+
+        if (change.rangeOffset < anchorOffset && rangeEnd > anchorOffset) {
+            return change.rangeOffset + offsetDelta + change.text.length;
+        }
+    }
+
+    return anchorOffset + offsetDelta;
 }
 
 export function commitShadowSessionEdit(
@@ -87,43 +132,6 @@ export function getGhostTextForCursor(
     }
 
     return getCurrentShadowLineRemainder(session);
-}
-
-export function isShadowPrefixAligned(
-    session: ShadowInlineSession,
-    actualPrefix: string
-) {
-    return actualPrefix === session.beforeText.slice(0, session.index);
-}
-
-export function shouldAbandonShadowSession(
-    session: ShadowInlineSession,
-    actualPrefix: string,
-    cursorAtSessionPosition: boolean
-) {
-    const expectedPrefix = session.beforeText.slice(0, session.index);
-    const hasRecoverableOverflow = actualPrefix.startsWith(expectedPrefix)
-        && actualPrefix.length > expectedPrefix.length;
-
-    return !hasRecoverableOverflow
-        && (actualPrefix !== expectedPrefix || !cursorAtSessionPosition);
-}
-
-export function shouldAbandonShadowSessionAfterSelectionChange(
-    session: ShadowInlineSession,
-    cursors: readonly ShadowCursor[],
-    isUserNavigation = false
-) {
-    if (!isUserNavigation) {
-        return false;
-    }
-
-    if (cursors.length !== 1) {
-        return true;
-    }
-
-    return cursors[0].line !== session.line
-        || cursors[0].character !== session.character;
 }
 
 export function shouldContinueRewrite(

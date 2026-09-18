@@ -23,7 +23,68 @@ export type LookWhileTypingControls = {
     reopenTargetKey: string;
 };
 
+export type LookWhileTypingTerminalNavigationMode =
+    | 'w3m'
+    | 'scrollback'
+    | 'cursorKeys'
+    | 'applicationCursorKeys'
+    | 'pageKeys';
+
 export type LookWhileTypingAction = 'scrollUp' | 'scrollDown' | 'closeTarget' | 'reopenTarget';
+
+export type LookWhileTypingInputToken = {
+    text: string;
+    action: LookWhileTypingAction | undefined;
+};
+
+export type LookWhileTypingCloseTargetKind = 'editor' | 'terminal';
+export type LookWhileTypingTargetKind = 'editor' | 'terminal';
+
+export type LookWhileTypingCoverTransition = {
+    activeTargetKind: LookWhileTypingTargetKind;
+    hiddenTargetKind: LookWhileTypingTargetKind | undefined;
+};
+
+export function getLookWhileTypingTargetKind(
+    hasEditorTarget: boolean,
+    hasTerminalTarget: boolean
+): LookWhileTypingTargetKind | undefined {
+    if (hasTerminalTarget) {
+        return 'terminal';
+    }
+    return hasEditorTarget ? 'editor' : undefined;
+}
+
+export function getLookWhileTypingCoverTransition(
+    targetKind: LookWhileTypingTargetKind
+): LookWhileTypingCoverTransition {
+    return {
+        activeTargetKind: 'editor',
+        hiddenTargetKind: targetKind,
+    };
+}
+
+export function getLookWhileTypingRestoreTransition(
+    hiddenTargetKind: LookWhileTypingTargetKind
+): LookWhileTypingCoverTransition {
+    return {
+        activeTargetKind: hiddenTargetKind,
+        hiddenTargetKind: undefined,
+    };
+}
+
+export function getLookWhileTypingCloseTargetKind(
+    hasEditorTarget: boolean,
+    hasTerminalTarget: boolean
+): LookWhileTypingCloseTargetKind | undefined {
+    return getLookWhileTypingTargetKind(hasEditorTarget, hasTerminalTarget);
+}
+
+export function getLookWhileTypingTerminalScrollCommand(direction: -1 | 1) {
+    return direction < 0
+        ? 'workbench.action.terminal.scrollUp'
+        : 'workbench.action.terminal.scrollDown';
+}
 
 export function getLookWhileTypingAction(
     typedText: string,
@@ -45,6 +106,16 @@ export function getLookWhileTypingAction(
     }
 
     return matchingActions.length === 1 ? matchingActions[0] : undefined;
+}
+
+export function getLookWhileTypingInputTokens(
+    typedText: string,
+    controls: LookWhileTypingControls
+): LookWhileTypingInputToken[] {
+    return [...typedText].map((text) => ({
+        text,
+        action: getLookWhileTypingAction(text, controls),
+    }));
 }
 
 export function getLookWhileTypingLabelPattern(relativePath: string) {
@@ -176,4 +247,23 @@ export function getLookWhileTypingCursorScrollPosition({
         return { line: firstVisibleLine, character: firstVisibleCharacter };
     }
     return { line: targetLine, character: 0 };
+}
+
+export function getLookWhileTypingTerminalInputSequence(
+    direction: -1 | 1,
+    mode: Exclude<LookWhileTypingTerminalNavigationMode, 'scrollback'>,
+    stepLines: number
+) {
+    const repeatCount = Math.max(1, Math.floor(stepLines));
+
+    switch (mode) {
+        case 'w3m':
+            return (direction < 0 ? 'K' : 'J').repeat(repeatCount);
+        case 'cursorKeys':
+            return (direction < 0 ? '\x1b[A' : '\x1b[B').repeat(repeatCount);
+        case 'applicationCursorKeys':
+            return (direction < 0 ? '\x1bOA' : '\x1bOB').repeat(repeatCount);
+        case 'pageKeys':
+            return direction < 0 ? '\x1b[5~' : '\x1b[6~';
+    }
 }

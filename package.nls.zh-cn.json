@@ -9,6 +9,7 @@
   "command.switchWriteMode": "切换重写模式",
   "command.exitShadowRewrite": "退出影子重写",
   "command.selectLookWhileTypingTarget": "边打边看：选择工作编辑器",
+  "command.selectLookWhileTypingCoverEditor": "边打边看：选择遮挡编辑器",
   "command.clearLookWhileTypingTarget": "边打边看：清除工作编辑器",
   "command.scrollLookWhileTypingUp": "边打边看：向上滚动工作编辑器",
   "command.scrollLookWhileTypingDown": "边打边看：向下滚动工作编辑器",
@@ -26,5 +27,11 @@
   "configuration.lookWhileTypingScrollUpKey": "边打边看时，向上滚动工作编辑器的单字符按键。",
   "configuration.lookWhileTypingScrollDownKey": "边打边看时，向下滚动工作编辑器的单字符按键。",
   "configuration.lookWhileTypingCloseTargetKey": "边打边看时，关闭工作编辑器的单字符按键。",
-  "configuration.lookWhileTypingReopenTargetKey": "边打边看时，重新打开最近关闭工作编辑器的单字符按键。"
+  "configuration.lookWhileTypingReopenTargetKey": "边打边看时，重新打开最近关闭工作编辑器的单字符按键。",
+  "configuration.lookWhileTypingTerminalNavigationMode": "“边打边看”控制终端时使用的导航方式。",
+  "configuration.lookWhileTypingTerminalNavigationMode.w3m": "使用 w3m 的 J/K 屏幕滚动命令小幅滚动文档。",
+  "configuration.lookWhileTypingTerminalNavigationMode.scrollback": "只滚动 VS Code 终端历史，不控制前台程序。",
+  "configuration.lookWhileTypingTerminalNavigationMode.cursorKeys": "向前台程序发送标准终端上/下方向键序列。",
+  "configuration.lookWhileTypingTerminalNavigationMode.applicationCursorKeys": "向前台程序发送应用模式上/下方向键序列。",
+  "configuration.lookWhileTypingTerminalNavigationMode.pageKeys": "向前台程序发送 Page Up/Page Down 键序列。"
 }

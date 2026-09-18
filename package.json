@@ -21,6 +21,7 @@
     "onCommand:extension.swimming.switchWriteMode",
     "onCommand:extension.swimming.exitShadowRewrite",
     "onCommand:extension.swimming.selectLookWhileTypingTarget",
+    "onCommand:extension.swimming.selectLookWhileTypingCoverEditor",
     "onCommand:extension.swimming.clearLookWhileTypingTarget",
     "onCommand:extension.swimming.scrollLookWhileTypingUp",
     "onCommand:extension.swimming.scrollLookWhileTypingDown",
@@ -59,6 +60,10 @@
       {
         "command": "extension.swimming.selectLookWhileTypingTarget",
         "title": "%command.selectLookWhileTypingTarget%"
+      },
+      {
+        "command": "extension.swimming.selectLookWhileTypingCoverEditor",
+        "title": "%command.selectLookWhileTypingCoverEditor%"
       },
       {
         "command": "extension.swimming.clearLookWhileTypingTarget",
@@ -135,6 +140,11 @@
           "group": "4_lookWhileTyping"
         },
         {
+          "command": "extension.swimming.selectLookWhileTypingCoverEditor",
+          "when": "editorFocus && vscodePluginSwimming.lookWhileTypingTargetVisible",
+          "group": "4_lookWhileTyping"
+        },
+        {
           "command": "extension.swimming.clearLookWhileTypingTarget",
           "when": "editorFocus && vscodePluginSwimming.lookWhileTypingTargetVisible",
           "group": "4_lookWhileTyping"
@@ -156,7 +166,7 @@
         },
         {
           "command": "extension.swimming.renameLookWhileTypingTarget",
-          "when": "editorFocus && vscodePluginSwimming.lookWhileTypingTargetVisible",
+          "when": "editorFocus && vscodePluginSwimming.lookWhileTypingEditorTargetVisible",
           "group": "4_lookWhileTyping"
         },
         {
@@ -269,6 +279,25 @@
           "maxLength": 1,
           "default": "`",
           "description": "%configuration.lookWhileTypingReopenTargetKey%"
+        },
+        "vscodePluginSwimming.lookWhileTypingTerminalNavigationMode": {
+          "type": "string",
+          "enum": [
+            "w3m",
+            "scrollback",
+            "cursorKeys",
+            "applicationCursorKeys",
+            "pageKeys"
+          ],
+          "enumDescriptions": [
+            "%configuration.lookWhileTypingTerminalNavigationMode.w3m%",
+            "%configuration.lookWhileTypingTerminalNavigationMode.scrollback%",
+            "%configuration.lookWhileTypingTerminalNavigationMode.cursorKeys%",
+            "%configuration.lookWhileTypingTerminalNavigationMode.applicationCursorKeys%",
+            "%configuration.lookWhileTypingTerminalNavigationMode.pageKeys%"
+          ],
+          "default": "w3m",
+          "description": "%configuration.lookWhileTypingTerminalNavigationMode%"
         }
       }
     }

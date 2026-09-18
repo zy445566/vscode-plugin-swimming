@@ -38,25 +38,33 @@ code --install-extension ./swimming-local.vsix --force
 新增 `Shadow Rewriting` 模式：
 * 先选中目标代码，再右键选择 `Shadow Rewriting`
 * 进入该模式后，除了 `Esc` 之外，你随便按键盘上的字符键，编辑器都会输出下一个目标代码字符
+* 光标位于下一个目标字符的动态锚点时执行映射；移动到其他区域后会暂停映射并恢复正常输入，返回锚点即可继续
+* 已完成区域允许正常增删，Shadow 会自动跟随这些编辑调整锚点，不再检查整段目标前缀
 * 可以显示类似 AI 行内补全的 ghost text，提示当前代码行剩余的完整内容
 * 该模式现在默认优先保证目标文本正确，不再借用编辑器的自动补全括号/引号
 * 当下一个目标字符是符号时，需要按出一个符号字符后才会继续映射，避免普通字母键直接写出符号
 * 按 `Esc` 可以退出 `Shadow Rewriting`
-* 如果系统或输入法抢字，shadow 会暂停继续推进；这时 `Backspace` 只会删除多输出来的字符，不会回退已经映射出的目标字符
+* 如果系统或输入法抢字，光标会离开锚点并暂停映射；此时输入和 `Backspace` 都按 VS Code 原生行为处理，清理后回到锚点即可继续
+* 在两个或更多可见编辑器中分别选中代码后启动 Shadow，可按轮询顺序在多个窗口中重写；普通代码重写也支持相同操作
 * 可以在 VS Code 设置中搜索 `shadowRequireShiftForSymbols`，关闭符号映射限制
 * 可以在 VS Code 设置中搜索 `shadowShowInlineSuggestion`，关闭 ghost text 提示
 * 可以在 VS Code 设置中搜索 `shadowRequireManualLineBreaksAndIndentation`，开启“回车换行 + Tab 推进缩进”的严格模式；其中 Tab 只消费一个 `\t` 或连续 4 个空格
 
 新增 `边打边看` 模式：
-* 将需要查看的文件与正在输入的文件放在两个可见的编辑器组中
-* 在正在输入的编辑器右键选择 `边打边看：选择工作窗口`，然后选择需要滚动的工作文件
+* 将需要查看的文件放在另一个可见编辑器组中，或者先打开需要浏览的终端
+* 在正在输入的编辑器右键选择 `边打边看：选择工作窗口`，然后选择需要滚动的工作文件或终端
 * 焦点仍停留在正在输入的编辑器时，默认按 `-` 向上滚动、`=` 向下滚动、`\` 关闭工作窗口、`` ` `` 重新打开最近关闭的工作窗口
+* 在 `Swimming` 子菜单选择 `边打边看：选择遮挡编辑器` 后，`\` 会切换到该编辑器而不结束工作终端；此时 `-`、`=` 会滚动遮挡编辑器，`` ` `` 可恢复原终端及其 w3m 会话
 * 滚动时会同步更新工作窗口的光标位置，重新聚焦后可继续从当前观看位置阅读
+* 终端目标复用 `-`、`=` 设置，输入焦点仍保留在代码编辑器；默认 `w3m` 模式会向目标终端发送大写 `K/J`，直接小幅滚动 w3m 页面，而不是只移动终端历史视图
 * 在右键菜单的 `Swimming` 子菜单中选择 `边打边看：重命名工作编辑器`，可为工作区文件设置自定义标签页名称
 * 可以在 VS Code 设置中搜索 `lookWhileTypingScrollUpKey`、`lookWhileTypingScrollDownKey`、`lookWhileTypingCloseTargetKey`、`lookWhileTypingReopenTargetKey` 自定义四个单字符按键
 * 可以在 VS Code 设置中搜索 `lookWhileTypingStepLines` 调整每次滚动的行数
 * 可以在 VS Code 设置中搜索 `lookWhileTypingScrollMode` 切换滚动方式：`line` 为跨文档行移动（默认），`cursor` 为移动工作窗口光标，适合自动换行后占据多行的超长文本
-* 右键选择 `边打边看：清除工作窗口` 后，三个按键都会恢复为普通输入
+* 可以在 VS Code 设置中搜索 `lookWhileTypingTerminalNavigationMode` 切换终端控制方式；普通终端历史滚动可选 `scrollback`，其他 TUI 可尝试标准方向键、应用模式方向键或 Page Up/Page Down
+* 右键选择 `边打边看：清除工作窗口` 后，四个按键都会恢复为普通输入
+
+普通 `Code Rewriting` 会先以 250–350ms 的随机间隔逐字输入每个单词的前 3 或 4 个字符，再一次补全该单词的剩余字符；写入空格后会随机停顿 750–1250ms，模拟人工输入与短暂思考。
 
 如果想要快捷键暂停代码重写，可以直接使用以下按键暂停：
 * win默认:ctrl+alt+shift+p

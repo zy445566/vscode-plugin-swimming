@@ -35,6 +35,17 @@ test('puts all editor context commands inside one Swimming submenu', () => {
     assert.ok(packageJson.contributes.menus['swimming.menu'].length > 0);
 });
 
+test('contributes the Look While Typing cover editor command to the Swimming submenu', () => {
+    const command = 'extension.swimming.selectLookWhileTypingCoverEditor';
+
+    assert.ok(packageJson.contributes.commands.some((item) => item.command === command));
+    assert.ok(
+        packageJson.contributes.menus['swimming.menu'].some((item) => {
+            return item.command === command;
+        })
+    );
+});
+
 test('localizes every manifest label in English and Simplified Chinese', () => {
     const labels = [
         packageJson.displayName,
@@ -107,6 +118,30 @@ test('offers line and cursor Look While Typing scroll modes', () => {
 
     assert.deepEqual(scrollMode.enum, ['line', 'cursor']);
     assert.equal(scrollMode.default, 'line');
+});
+
+test('offers general terminal navigation modes', () => {
+    const configuration = packageJson.contributes.configuration.properties;
+    const terminalNavigationMode = configuration[
+        'vscodePluginSwimming.lookWhileTypingTerminalNavigationMode'
+    ];
+
+    assert.deepEqual(terminalNavigationMode.enum.slice(1), [
+        'scrollback',
+        'cursorKeys',
+        'applicationCursorKeys',
+        'pageKeys',
+    ]);
+});
+
+test('defaults terminal navigation to w3m', () => {
+    const configuration = packageJson.contributes.configuration.properties;
+    const terminalNavigationMode = configuration[
+        'vscodePluginSwimming.lookWhileTypingTerminalNavigationMode'
+    ];
+
+    assert.equal(terminalNavigationMode.default, 'w3m');
+    assert.equal(terminalNavigationMode.enum[0], 'w3m');
 });
 
 test('documents the complete local VSIX packaging and installation workflow', () => {

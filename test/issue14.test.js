@@ -3,47 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const {
-    shouldAbandonShadowSessionAfterSelectionChange,
-    shouldContinueRewrite,
-} = require('../out/shadowInline');
-
-test('abandons Shadow Rewriting when the cursor leaves the session position', () => {
-    const session = {
-        beforeText: 'target',
-        index: 2,
-        line: 4,
-        character: 7,
-    };
-
-    assert.equal(
-        shouldAbandonShadowSessionAfterSelectionChange(session, [{ line: 4, character: 7 }]),
-        false
-    );
-    assert.equal(
-        shouldAbandonShadowSessionAfterSelectionChange(
-            session,
-            [{ line: 4, character: 8 }],
-            true
-        ),
-        true
-    );
-    assert.equal(
-        shouldAbandonShadowSessionAfterSelectionChange(session, [
-            { line: 4, character: 7 },
-            { line: 5, character: 0 },
-        ], true),
-        true
-    );
-    assert.equal(
-        shouldAbandonShadowSessionAfterSelectionChange(
-            session,
-            [{ line: 4, character: 8 }],
-            false
-        ),
-        false
-    );
-});
+const { shouldContinueRewrite } = require('../out/shadowInline');
 
 test('stops scheduled rewriting after the active state is cleared', () => {
     assert.equal(shouldContinueRewrite(true, false), true);
